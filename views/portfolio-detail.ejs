@@ -1,0 +1,162 @@
+<%
+const { item, title: itemTitle, description, project, records, technologies, period, status } = entry;
+const url = '/portfolio/' + item.id;
+const materialUrl = file => (shared ? sharePath : url) + '/files/' + file.id;
+const images = visibleMaterials.files.filter(file => file.type === 'image');
+const coverIndex = Math.max(0, images.findIndex(file => file.thumbnail));
+const slides = [...images.slice(coverIndex, coverIndex + 1), ...images.filter((_, index) => index !== coverIndex)];
+const links = Object.entries(linkLabels).filter(([key]) => item.links?.[key]);
+const pageUrl = shared ? sharePath : url;
+%>
+<%- include('partials/start') %>
+<header class="page-heading portfolio-heading">
+  <div>
+    <div class="portfolio-title-row">
+      <h1><%= itemTitle %></h1>
+      <div class="portfolio-title-actions">
+        <% if (!shared) { %>
+          <a class="button portfolio-action-icon" href="<%= url %>/edit" aria-label="수정" title="수정">
+            <%- include('partials/sidebar-icon', { icon: 'settings' }) %>
+          </a>
+        <% } %>
+        <%- include('partials/portfolio-info', { item, project, technologies, period, status }) %>
+        <% if (!shared) { %>
+          <%- include('partials/portfolio-material-editor', { item, materials, materialCategory, materialError, url }) %>
+          <%- include('partials/portfolio-analyze', { action: url + '/analyze', categories: materialCategories, selected: materialCategory, enabled: openAiEnabled }) %>
+        <% } %>
+      </div>
+    </div>
+    <% if (technologies.length) { %><p><%= technologies.join(' · ') %></p><% } %>
+  </div>
+</header>
+<% if (analysisError) { %><p class="error portfolio-error" role="alert"><%= analysisError %></p><% } %>
+<div id="portfolio-materials">
+  <nav class="portfolio-material-categories" aria-label="자료 세부 카테고리">
+    <a class="button" href="<%= pageUrl %>#portfolio-materials"<%- materialCategory === '*' ? ' aria-current="page"' : '' %>>전체</a>
+    <% for (const { id, name } of materialCategories) { %>
+      <a class="button" data-material-category-link="<%= id %>" href="<%= pageUrl %>?materialCategory=<%= id %>#portfolio-materials"<%- id === materialCategory ? ' aria-current="page"' : '' %>><%= name %></a>
+    <% } %>
+    <% if (!shared) { %>
+      <button class="button portfolio-action-icon" type="button" aria-label="카테고리 관리" title="카테고리 관리"
+        aria-haspopup="dialog" aria-controls="portfolio-category-editor" data-open-portfolio-categories>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    <% } %>
+  </nav>
+<% if (!shared) { %><%- include('partials/portfolio-category-editor', { item, materials, materialCategory, categoryError, url }) %><% } %>
+<% if (slides.length) { %>
+  <section class="portfolio-gallery" aria-label="포트폴리오 이미지" data-portfolio-gallery>
+    <div class="portfolio-gallery-grid">
+      <% for (const [index, image] of slides.entries()) { const name = image.caption || image.name; %>
+        <a class="portfolio-gallery-item" href="<%= materialUrl(image) %>" data-slide-open="<%= index %>">
+          <img src="<%= materialUrl(image) %>" alt="" loading="<%= index > 1 ? 'lazy' : 'eager' %>">
+          <div class="portfolio-gallery-caption">
+            <strong><%= name %></strong>
+            <% if (period) { %><span><%= period %></span><% } %>
+          </div>
+        </a>
+      <% } %>
+    </div>
+    <dialog class="portfolio-slideshow" aria-label="포트폴리오 이미지 크게 보기" data-portfolio-slideshow>
+      <header class="portfolio-slide-toolbar">
+        <p class="portfolio-slide-count" aria-live="polite" data-slide-count></p>
+        <form method="dialog"><button class="button" autofocus>닫기</button></form>
+      </header>
+      <div class="portfolio-slide-stage">
+        <% for (const image of slides) { %>
+          <figure class="portfolio-slide" data-portfolio-slide hidden>
+            <a href="<%= materialUrl(image) %>"><img data-src="<%= materialUrl(image) %>" alt="<%= image.caption || image.name %>"></a>
+            <figcaption><%= image.caption || image.name %></figcaption>
+          </figure>
+        <% } %>
+        <% if (slides.length > 1) { %>
+          <button class="portfolio-slide-arrow" type="button" data-slide-step="-1" aria-label="이전 이미지">‹</button>
+          <button class="portfolio-slide-arrow" type="button" data-slide-step="1" aria-label="다음 이미지">›</button>
+        <% } %>
+      </div>
+    </dialog>
+  </section>
+<% } %>
+<% if (materialCategory !== '*' && !visibleMaterials.files.length && !visibleMaterials.links.length) { %>
+  <p class="muted">이 카테고리에 등록된 자료가 없어요.</p>
+<% } %>
+<% if (description || links.length || githubLinks.length || item.contact?.email || item.contact?.details) { %>
+  <section class="portfolio-overview" aria-label="포트폴리오 소개">
+    <% if (description) { %><p class="portfolio-description"><%= description %></p><% } %>
+    <% if (links.length || githubLinks.length || item.contact?.email || item.contact?.details) { %>
+      <div class="portfolio-contact-row">
+        <% if (links.length || githubLinks.length) { %>
+          <nav class="portfolio-detail-links" aria-label="포트폴리오 관련 링크">
+            <% for (const link of githubLinks) { %>
+              <a class="button portfolio-action-icon" href="<%= link.url %>" target="_blank" rel="noopener noreferrer"
+                aria-label="GitHub에서 <%= link.title %> 보기" title="GitHub · <%= link.title %>">
+                <%- include('partials/portfolio-link-icon', { icon: 'github' }) %>
+              </a>
+            <% } %>
+            <% for (const [key, label] of links) { %>
+              <a class="button portfolio-action-icon" href="<%= item.links[key] %>" target="_blank" rel="noopener noreferrer" aria-label="<%= label %>" title="<%= label %>">
+                <%- include('partials/portfolio-link-icon', { icon: key }) %>
+              </a>
+            <% } %>
+          </nav>
+        <% } %>
+        <% if (item.contact?.email || item.contact?.details) { %>
+          <div class="portfolio-contact-text">
+            <% if (item.contact.email) { %><a href="mailto:<%= encodeURIComponent(item.contact.email).replace('%40', '@') %>"><%= item.contact.email %></a><% } %>
+            <% if (item.contact.details) { %><p><%= item.contact.details %></p><% } %>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  </section>
+<% } %>
+</div>
+<% if (shareHref) { %>
+  <section class="panel form-panel portfolio-share-panel" aria-labelledby="portfolio-share-title">
+    <h2 id="portfolio-share-title">공유 링크</h2>
+    <div class="portfolio-share">
+      <input id="portfolio-share-link" type="text" value="<%= shareHref %>" aria-label="공유 링크 주소" readonly>
+      <button class="button" type="button" data-portfolio-copy hidden>링크 복사</button>
+      <a class="button" href="<%= shareHref %>" target="_blank" rel="noopener">공개 페이지 열기 ↗</a>
+    </div>
+    <p class="muted" role="status" data-portfolio-copy-status></p>
+  </section>
+<% } %>
+<% if (!openAiEnabled && !shared) { %><p class="muted portfolio-ai-note">서버에 OpenAI API 키를 설정하면 분석할 수 있어요.</p><% } %>
+<% if (project) { %>
+  <section class="panel form-panel portfolio-section">
+    <div class="row-heading">
+      <h2>프로젝트 과정</h2>
+      <% if (project.progress >= 100) { %><a class="text-link" href="/projects/<%= project.id %>/report">완료 리포트 ↗</a><% } %>
+    </div>
+    <% if (!records.length) { %><p class="muted">등록된 작업 기록이 없어요.</p><% } %>
+    <% if (records.length) { %><ol class="portfolio-process">
+      <% for (const node of [...records].reverse()) { const issue = errorStatusFor(node); %>
+        <li>
+          <time class="muted" datetime="<%= node.date %>"><%= node.date %></time>
+          <h3><a class="text-link" href="<%= nodeDetailUrl(node) %>"><%= node.title %></a></h3>
+          <% if (issue) { %><span class="status <%= issue %>"><%= errorStatuses[issue] %></span><% } %>
+          <% if (node.note) { %><p><%= node.note %></p><% } %>
+          <% if (node.action) { %><p><strong>조치</strong> <%= node.action %></p><% } %>
+          <% if (node.result) { %><p><strong>결과</strong> <%= node.result %></p><% } %>
+          <% if (node.feedback?.length) { %>
+            <details class="portfolio-node-feedback">
+              <summary>AI 피드백 <%= node.feedback.length %>건</summary>
+              <% for (const { item: feedback, key, label } of feedbackEntries(node)) { const excerpt = String(feedback.text || ''); %>
+                <article>
+                  <a class="text-link" href="<%= nodeDetailUrl(node) %>/feedback/<%= key %>"><%= label %> 자세히 보기</a>
+                  <% if (excerpt) { %><div class="feedback-markdown"><%- feedbackMarkdown(excerpt.slice(0, 400)) %><%= excerpt.length > 400 ? '…' : '' %></div><% } %>
+                  <% if (feedback.action?.text) { %><p><strong>조치</strong> <%= feedback.action.text %></p><% } %>
+                  <% if (feedback.action?.result) { %><p><strong>결과</strong> <%= feedbackResults[feedback.action.result] || '' %> <%= feedback.action.note || '' %></p><% } %>
+                </article>
+              <% } %>
+            </details>
+          <% } %>
+        </li>
+      <% } %>
+    </ol><% } %>
+  </section>
+<% } %>
+<% if (slides.length) { %><script src="/portfolio-slideshow.js" defer></script><% } %>
+<% if (!shared) { %><script src="/portfolio-material-editor.js" defer></script><% } %>
+<%- include('partials/end') %>

@@ -1,0 +1,5 @@
+<ul class="calendar-todos" aria-label="<%= shortDate(day) %> <%= project ? project.name : '프로젝트 미연결' %> 할 일"<% if (project) { %> style="--project-color:<%= project.color %>"<% } %>>
+  <% for (const todo of items) { %>
+    <li><a class="calendar-todo <%= todo.done ? 'calendar-todo-done' : '' %>" href="/todos#todo-<%= todo.id %>" title="<%= project ? project.name + ' · ' : '' %><%= todo.title %>"><span class="calendar-entry-title"><span aria-hidden="true"><%= todo.done ? '✓' : '•' %></span> <%= todo.title %></span><% if (todo.done) { %><span class="calendar-todo-status"> · 완료</span><% } %></a></li>
+  <% } %>
+</ul>

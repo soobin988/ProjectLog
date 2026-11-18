@@ -1,0 +1,6 @@
+<select class="todo-project" name="projectId" aria-label="프로젝트 연결">
+  <option value="">프로젝트 연결 (선택)</option>
+  <% for (const project of projects) { %>
+    <option value="<%= project.id %>" <%= project.id === selected ? 'selected' : '' %>><%= project.name %></option>
+  <% } %>
+</select>

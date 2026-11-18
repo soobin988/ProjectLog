@@ -1,0 +1,83 @@
+<% const guestMenu = typeof guestsOnly !== 'undefined' && guestsOnly; %>
+<!doctype html>
+<html lang="ko" data-theme-account="<%= typeof account === 'undefined' ? 'local' : account.uid %>">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · Project Log</title>
+  <script src="/theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&amp;family=Noto+Serif+KR:wght@400&amp;display=swap">
+  <link rel="stylesheet" href="/style.css">
+  <% if (page === 'portfolio') { %><script src="/sortable-list.js" defer></script><% } %>
+  <script src="/ui.js" defer></script>
+  <script src="/updates.js" defer></script>
+  <% if (!guestMenu && typeof account !== 'undefined') { %><script src="/activity.js" defer></script><% } %>
+  <% if (page === 'dashboard') { %><script src="/dashboard.js" defer></script><% } %>
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <aside class="sidebar">
+    <div class="sidebar-identity">
+      <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span>Project Log</a>
+      <% if (!guestMenu) { %><%- include('sidebar-profile') %><% } %>
+    </div>
+    <% if (!guestMenu) { %><nav class="sidebar-main" aria-label="주 메뉴">
+      <% for (const [key, href, icon, label] of [
+        ['dashboard', '/', 'dashboard', '대시보드'],
+        ['projects', '/projects', 'folder', '프로젝트'],
+        ['todos', '/todos', 'todo', 'Todo List'],
+        ['portfolio', '/portfolio', 'portfolio', 'Portfolio'],
+        ['notifications', '/notifications', 'bell', '알림']
+      ]) { %>
+        <a href="<%= href %>" aria-label="<%= label %>"<%- page === key ? ' aria-current="page"' : '' %>><%- include('sidebar-icon', { icon }) %><span class="sidebar-main-label"><%= label %></span></a>
+      <% } %>
+    </nav><% } %>
+    <nav class="sidebar-footer" aria-label="도움말과 환경설정">
+      <% if (typeof account !== 'undefined' && account.developer) { %>
+        <a href="/developer" aria-label="개발자 전용" title="개발자 전용" <%- page === 'developer' ? 'aria-current="page"' : '' %>><%- include('sidebar-icon', { icon: 'developer' }) %><span class="sidebar-footer-label">개발자 전용</span></a>
+      <% } %>
+      <a href="/suggestions" aria-label="개발자 문의" title="개발자 문의" <%- page === 'suggestions' ? 'aria-current="page"' : '' %>><%- include('sidebar-icon', { icon: 'suggestions' }) %><span class="sidebar-footer-label">개발자 문의</span></a>
+      <button class="settings-trigger" type="button" aria-label="환경설정" title="환경설정" aria-haspopup="dialog" aria-controls="settings-dialog" data-open-settings><%- include('sidebar-icon', { icon: 'settings' }) %><span class="sidebar-footer-label">환경설정</span></button>
+    </nav>
+  </aside>
+  <%- include('settings') %>
+  <div class="shell">
+    <header class="topbar">
+      <nav class="crumb" aria-label="현재 위치">
+        <% if (typeof breadcrumbLinks !== 'undefined') { %>
+          <% for (const { label, href } of breadcrumbLinks) { %>
+            <a href="<%= href %>"><%= label %></a><span aria-hidden="true">›</span>
+          <% } %>
+        <% } else if (page === 'projects' && title !== '프로젝트') { %>
+          <a href="/projects">프로젝트</a><span aria-hidden="true">›</span>
+        <% } else if (page === 'portfolio' && title !== 'Portfolio' && !guestMenu) { %>
+          <a href="/portfolio">Portfolio</a><span aria-hidden="true">›</span>
+        <% } %>
+        <% if (typeof breadcrumbFeedback !== 'undefined' && breadcrumbFeedback.length) { %>
+          <details class="breadcrumb-feedback" data-breadcrumb-feedback>
+            <summary><strong aria-current="page"><%= title %></strong><span aria-hidden="true">⌄</span></summary>
+            <ul class="panel breadcrumb-feedback-options" aria-label="이 노드의 다른 피드백">
+              <% for (const { label, href } of breadcrumbFeedback) { %>
+                <li><a href="<%= href %>"><%= label %></a></li>
+              <% } %>
+            </ul>
+          </details>
+        <% } else { %>
+          <strong aria-current="page"><%= title %></strong>
+        <% } %>
+      </nav>
+      <div class="top-actions">
+        <% if (page === 'dashboard') { %>
+          <%- include('mini-notifications') %>
+        <% } %>
+        <% if (!guestMenu && typeof newProjectUrl !== 'undefined') { %>
+          <a class="button primary top-action" href="<%= newProjectUrl %>">＋ 새 프로젝트</a>
+        <% } else if (guestMenu && page === 'suggestions') { %>
+          <a class="button" href="/login">로그인</a>
+        <% } %>
+      </div>
+    </header>
+    <main class="content" id="main"<% if (typeof project !== 'undefined') { %> style="--project-color:<%= project.color %>"<% } %>>

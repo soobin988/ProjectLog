@@ -1,0 +1,38 @@
+<%
+  const base = '/projects/' + node.projectId;
+  const feedbackUrl = base + '/nodes/' + node.id + '/feedback';
+  const key = feedbackIdFor(node, item);
+  const savedUrl = feedbackUrl + '/' + key;
+  const suffix = fromList ? '?from=list' : '';
+  const action = item.action;
+  const result = feedbackResults[action?.result];
+%>
+<section class="panel form-panel feedback-application">
+  <h2>적용 내역</h2>
+  <div class="feedback-followup">
+    <dl>
+      <dt>실행한 조치</dt>
+      <dd><%= action.text %></dd>
+      <dt>결과</dt>
+      <dd><%= result || '기록 대기' %></dd>
+      <% if (action.note) { %><dd><%= action.note %></dd><% } %>
+    </dl>
+    <div class="feedback-controls">
+      <a class="button" href="<%= savedUrl %>/action<%= suffix %>"><%= result ? '조치·결과 수정' : '결과 기록' %></a>
+      <% if (item.nextNodeId) { %>
+        <a class="button" href="<%= base %>#node-<%= item.nextNodeId %>">다음 노드 보기 ↗</a>
+      <% } else if (['success', 'fail'].includes(action.result)) { %>
+        <a class="button" href="<%= savedUrl %>/next-node<%= suffix %>">＋ 다음 노드 추가</a>
+      <% } %>
+    </div>
+  </div>
+</section>
+<% if (item.actions?.length > 1) { %>
+<section class="panel form-panel">
+  <details><summary>이전 조치 기록</summary>
+    <% for (const previous of item.actions.slice(0, -1).reverse()) { %>
+      <article class="response"><p><%= previous.text %></p><p class="muted"><%= feedbackResults[previous.result] || '진행 중' %> · <%= previous.note %></p></article>
+    <% } %>
+  </details>
+</section>
+<% } %>

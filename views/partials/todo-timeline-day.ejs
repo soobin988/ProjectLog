@@ -1,0 +1,11 @@
+<section class="timeline-day">
+  <h3><time datetime="<%= date %>"><%= shortDate(date) %></time></h3>
+  <% for (const todo of items) { const linkedProject = projectFor(todo.projectId); %>
+    <article class="todo-timeline-entry">
+      <div class="panel timeline-node"<% if (linkedProject) { %> style="--project-color:<%= linkedProject.color %>"<% } %>>
+        <h4 class="record-title"><a href="#todo-<%= todo.id %>"><%= todo.title %></a></h4>
+      </div>
+      <time class="todo-meta" datetime="<%= todo.completedAt %>"><%= completionTime(todo) %></time>
+    </article>
+  <% } %>
+</section>

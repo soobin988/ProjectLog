@@ -1,0 +1,7 @@
+<%- include('partials/start', { breadcrumbLinks: [
+  { label: 'Portfolio', href: '/portfolio' },
+  { label: entry.title, href: '/portfolio/' + entry.item.id }
+] }) %>
+<header class="page-heading"><div><h1><%= title %></h1><p><%= entry.title %></p></div></header>
+<%- include('partials/portfolio-history', { recent, heading: '분석 기록' }) %>
+<%- include('partials/end') %>

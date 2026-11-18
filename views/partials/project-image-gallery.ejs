@@ -1,0 +1,20 @@
+<% const shown = images.slice(0, 4); const imageUrl = file => nodeDetailUrl(node) + '/files/' + file.id; %>
+<div class="project-image-grid" data-columns="<%= shown.length %>">
+  <% for (const [index, file] of shown.entries()) {
+    const extra = index === 3 ? images.length - shown.length : 0;
+  %>
+    <a class="project-image-cell" href="<%= imageUrl(file) %>" data-open-gallery="<%= index %>" aria-label="<%= extra ? '이미지 ' + images.length + '장 모두 보기' : file.name + ' 크게 보기' %>">
+      <img src="<%= imageUrl(file) %>" alt="<%= file.name %>" loading="lazy">
+      <% if (extra) { %><span class="project-image-more" aria-hidden="true">+<%= extra %></span><% } %>
+    </a>
+  <% } %>
+</div>
+<dialog class="project-image-dialog" aria-label="이미지 크게 보기">
+  <header class="row-heading">
+    <h3>이미지</h3>
+    <form method="dialog"><button class="button" autofocus>닫기</button></form>
+  </header>
+  <% for (const file of images) { %>
+    <figure><img data-src="<%= imageUrl(file) %>" alt="<%= file.name %>"></figure>
+  <% } %>
+</dialog>

@@ -1,0 +1,22 @@
+<%- include('partials/start', { breadcrumbLinks: [{ label: '프로젝트', href: '/projects' },
+  { label: project.name, href: '/projects/' + project.id }] }) %>
+<header class="page-heading"><div><h1>완료 리포트</h1><p><%= project.name %><% if (dates.length) { %> · <%= dates[0] %> ~ <%= dates.at(-1) %><% } %></p></div></header>
+<section class="stats" aria-label="작업 통계">
+  <% for (const [label, number] of [['작업 기록', records.length], ['발생 문제', issueCount], ['문제 해결률', issueCount ? Math.round(resolvedCount / issueCount * 100) + '%' : '—'], ['피드백', feedbackCount]]) { %>
+    <article class="panel stat"><span><%= label %></span><strong><%= number %></strong></article>
+  <% } %>
+</section>
+<div class="feedback-grid report-grid">
+  <section class="panel form-panel"><h2>작업 추이</h2>
+    <% if (!dates.length) { %><p class="muted">분석할 작업 기록이 없습니다.</p><% } %>
+    <% for (const date of dates) { const count = records.filter(node => node.date === date).length; %>
+      <div class="report-row"><time datetime="<%= date %>"><%= shortDate(date) %></time><progress max="<%= records.length %>" value="<%= count %>" aria-label="당일 작업 기록 수"></progress><span><%= count %>건</span></div>
+    <% } %>
+  </section>
+  <section class="panel form-panel"><h2>문제 해결 내역</h2><p class="muted">발생한 문제 <%= issueCount %>건 중 <%= resolvedCount %>건 해결</p>
+    <% for (const node of records.filter(isIssue)) { %>
+      <article class="response report-entry <%= node.ai?.title ? 'ai-tone' : '' %>"><div class="row-heading"><div class="record-heading"><h3 class="record-title"><a href="/projects/<%= project.id %>#node-<%= node.id %>"><%= node.title %></a></h3><% if (node.ai?.title) { %><span class="attribution">AI 작성·수정</span><% } %></div><%- include('partials/status', { node }) %></div><%- include('partials/record', { node }) %></article>
+    <% } %>
+  </section>
+</div>
+<%- include('partials/end') %>

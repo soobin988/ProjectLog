@@ -1,0 +1,23 @@
+<section class="dashboard-day">
+  <h3 class="dashboard-flow-date"><time datetime="<%= date %>"><%= shortDate(date) %></time></h3>
+  <% if (!entries.length) { %>
+    <p class="muted">오늘 기록된 작업이 없습니다.</p>
+  <% } else { %>
+    <ol class="dashboard-flow" role="list">
+      <% for (const { projectId, node, todo } of entries) {
+        const project = projectFor(projectId);
+        const itemUrl = node ? '/projects/' + node.projectId + '#node-' + node.id : '/todos#todo-' + todo.id;
+        const title = (node || todo).title;
+        const completed = node ? workStatusFor(node) === 'complete' : todo.done;
+      %>
+        <li class="dashboard-node <%= node?.ai?.title ? 'ai-tone' : '' %>"<% if (project) { %> style="--project-color:<%= project.color %>"<% } %>>
+          <div class="dashboard-node-heading">
+            <a class="record-title" href="<%= itemUrl %>" <% if (completed) { %>aria-label="<%= title %> (완료)"<% } %>><% if (completed) { %><s><%= title %></s><% } else { %><%= title %><% } %></a>
+            <% if (node) { %><%- include('status', { node, showSymbol: false, showWorkStatus: false }) %><% } %>
+          </div>
+          <% if (todo?.feedbackSource) { %><a class="text-link todo-meta" href="<%= feedbackSourceUrl(todo.feedbackSource) %>">원본 AI 피드백</a><% } %>
+        </li>
+      <% } %>
+    </ol>
+  <% } %>
+</section>

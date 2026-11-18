@@ -1,0 +1,40 @@
+<fieldset class="portfolio-sources portfolio-cover-editor" data-cover-editor
+  data-cover-settings="<%= JSON.stringify(cover) %>"
+  data-cover-images="<%= JSON.stringify(item.files.filter(file => file.type === 'image').map(file => ({
+    id: file.id, name: file.name, thumbnail: file.thumbnail, src: '/portfolio/' + item.id + '/files/' + file.id
+  }))) %>" hidden>
+  <legend>표지 편집</legend>
+  <input type="hidden" name="cover" disabled>
+  <div class="portfolio-cover-editor-grid">
+    <div class="portfolio-cover" data-cover-preview aria-label="표지 미리보기">
+      <span class="portfolio-cover-title" data-cover-title></span>
+      <% for (let slot = 0; slot < 4; slot++) { %>
+        <div class="portfolio-cover-tile" data-cover-tile="<%= slot %>" hidden><img alt="" draggable="false"></div>
+      <% } %>
+    </div>
+    <div class="portfolio-cover-fields">
+      <label>표지 방식
+        <select data-cover-mode>
+          <option value="auto">자동</option>
+          <option value="title">배경색과 제목</option>
+          <option value="images">이미지 편집</option>
+        </select>
+      </label>
+      <label class="portfolio-cover-color">배경색 <input type="color" data-cover-color></label>
+      <div class="portfolio-cover-crop" data-cover-crop hidden>
+        <div class="portfolio-cover-slots" role="group" aria-label="이미지 배치 칸">
+          <% for (const [slot, label] of ['왼쪽 위', '오른쪽 위', '왼쪽 아래', '오른쪽 아래'].entries()) { %>
+            <button type="button" class="button" data-cover-slot="<%= slot %>" aria-pressed="<%= slot === 0 %>"><%= label %></button>
+          <% } %>
+        </div>
+        <label>이미지 선택
+          <select data-cover-image></select>
+        </label>
+        <div class="portfolio-cover-adjustments" data-cover-adjustments hidden>
+          <label>확대 <input type="range" data-cover-value="zoom" min="1" max="5" step="0.1"></label>
+        </div>
+        <p class="muted">같은 이미지를 여러 칸에 넣을 수 있어요. 미리보기에서 이미지를 끌어 위치를 맞추세요.</p>
+      </div>
+    </div>
+  </div>
+</fieldset>

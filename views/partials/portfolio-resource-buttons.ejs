@@ -1,0 +1,27 @@
+<% const showLinks = Boolean(addedLink.url || addedLink.title || github); %>
+<div class="portfolio-resources" data-portfolio-resources>
+  <div class="portfolio-resource-buttons" role="group" aria-label="자료 추가">
+    <button class="button portfolio-resource-button" type="button" data-resource-file="images" aria-label="이미지 추가" aria-describedby="portfolio-image-limit">
+      <%- include('artifact-icon', { icon: 'image' }) %>
+      <span id="portfolio-image-limit" class="portfolio-resource-tooltip">JPG, PNG, WebP · 최대 12장 · 파일당 8MB</span>
+    </button>
+    <button class="button portfolio-resource-button" type="button" data-resource-file="zips" aria-label="파일 추가" aria-describedby="portfolio-file-limit">
+      <%- include('project-icon', { icon: 'file' }) %>
+      <span id="portfolio-file-limit" class="portfolio-resource-tooltip">ZIP, PDF · 최대 3개 · 파일당 30MB</span>
+    </button>
+    <button class="button portfolio-resource-button" type="button" data-resource-link aria-label="링크 추가" aria-describedby="portfolio-link-help" aria-controls="portfolio-material-link-fields" aria-expanded="<%= showLinks %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m10 13 4-4m-6 8-1 1a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m4-2 1-1a3 3 0 0 1 4 4l-5 5a3 3 0 0 1-4 0"/></svg>
+      <span id="portfolio-link-help" class="portfolio-resource-tooltip">GitHub나 웹사이트 주소를 추가해요</span>
+    </button>
+  </div>
+  <input type="file" name="images" accept=".jpg,.jpeg,.png,.webp" multiple hidden>
+  <input type="file" name="zips" accept=".zip,.pdf" multiple hidden>
+  <p class="muted portfolio-resource-status" role="status" data-resource-status></p>
+  <div class="portfolio-resource-link-fields" id="portfolio-material-link-fields"<%= showLinks ? '' : ' hidden' %>>
+    <label>링크 주소 <input type="url" name="materialUrl" maxlength="255" placeholder="https://" value="<%= addedLink.url || '' %>"></label>
+    <label>링크 제목 <input type="text" name="materialTitle" maxlength="100" value="<%= addedLink.title || '' %>"></label>
+    <% if (github !== null) { %>
+      <label>GitHub 저장소 <input type="url" name="github" maxlength="255" placeholder="https://github.com/user/project" value="<%= github %>"></label>
+    <% } %>
+  </div>
+</div>

@@ -1,0 +1,54 @@
+<%- include('partials/start') %>
+<header class="page-heading">
+  <div><h1><%= member.name %></h1><p>UID <%= member.uid %> · <%= member.google ? 'Google 로그인' : '아이디 로그인' %></p></div>
+</header>
+<% if (reset) { %><p class="developer-result" role="status">유저 데이터를 삭제했어요.</p><% } %>
+<% if (cleanupFailed) { %><p class="developer-result error" role="alert">일부 첨부 파일을 서버에서 지우지 못했어요. 서버 로그를 확인해 주세요.</p><% } %>
+<section class="stats developer-stats" aria-label="회원 사용량 요약">
+  <% for (const [label, value] of [
+    ['활동 시간', duration(member.seconds)],
+    ['AI 요청', units(member.requests) + '건'],
+    ['입력 토큰', units(member.inputTokens)],
+    ['출력 토큰', units(member.outputTokens)]
+  ]) { %>
+    <div class="panel stat"><span><%= label %></span><strong><%= value %></strong></div>
+  <% } %>
+</section>
+<section class="panel form-panel developer-members" aria-labelledby="usage-by-day-title">
+  <h2 id="usage-by-day-title">날짜별 이용 기록</h2>
+  <form class="developer-filters" method="get">
+    <label>기간
+      <select name="period">
+        <% for (const [key, label] of Object.entries(periods)) { %><option value="<%= key %>" <%= period === key ? 'selected' : '' %>><%= label %></option><% } %>
+      </select>
+    </label>
+    <button class="button" type="submit">적용</button>
+  </form>
+  <p class="muted developer-metrics-note">날짜는 한국 시간 기준이에요. 토큰 합계는 OpenAI가 사용량을 반환한 요청만 포함해요.</p>
+  <div class="developer-table-wrap">
+    <table class="developer-table">
+      <thead><tr><th scope="col">날짜</th><th scope="col">활동 시간</th><th scope="col">노드 피드백</th><th scope="col">Portfolio 분석</th><th scope="col">실패</th><th scope="col">보고 토큰</th></tr></thead>
+      <tbody>
+        <% for (const day of dayRows) { %>
+          <tr>
+            <th scope="row"><time datetime="<%= day.date %>"><%= day.date %></time></th>
+            <td><%= duration(day.seconds) %></td>
+            <td><%= units(day.feedbackRequests) %>건</td>
+            <td><%= units((Number(day.requests) || 0) - (Number(day.feedbackRequests) || 0)) %>건</td>
+            <td><%= units(day.failures) %>건</td>
+            <td><%= units(day.totalTokens) %><% if ((Number(day.requests) || 0) > (Number(day.metered) || 0)) { %><small>미보고 <%= units(Number(day.requests) - (Number(day.metered) || 0)) %>건</small><% } %></td>
+          </tr>
+        <% } %>
+        <% if (!dayRows.length) { %><tr><td colspan="6" class="muted">선택한 기간에 기록이 없어요.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel form-panel developer-removal" aria-labelledby="developer-removal-title">
+  <h2 id="developer-removal-title">회원 데이터 관리</h2>
+  <div class="developer-removal-actions">
+    <a class="button" href="/developer/members/<%= member.uid %>/delete-data?period=<%= period %>">유저 데이터 삭제</a>
+    <% if (member.uid !== account.uid) { %><a class="button developer-delete" href="/developer/members/<%= member.uid %>/delete-account?period=<%= period %>">아이디 삭제</a><% } %>
+  </div>
+</section>
+<%- include('partials/end') %>

@@ -1,0 +1,48 @@
+<%- include('partials/start') %>
+<header class="page-heading portfolio-page-heading">
+  <div class="portfolio-page-copy">
+    <div>
+      <h1><%= header.heading %></h1>
+      <% if (header.description) { %><p><%= header.description %></p><% } %>
+    </div>
+    <button class="button portfolio-page-edit" type="button" aria-haspopup="dialog" aria-controls="portfolio-page-editor" data-open-portfolio-page>수정</button>
+  </div>
+</header>
+<dialog class="panel form-panel portfolio-page-editor" id="portfolio-page-editor" aria-labelledby="portfolio-page-editor-title"<% if (headerError) { %> data-reopen<% } %>>
+  <header class="row-heading">
+    <h2 id="portfolio-page-editor-title">포트폴리오 제목과 설명</h2>
+    <form method="dialog"><button class="button" type="submit">닫기</button></form>
+  </header>
+  <form class="portfolio-page-form" method="post" action="/portfolio/settings">
+    <% if (headerError) { %><p class="error" role="alert"><%= headerError %></p><% } %>
+    <label>제목 <input name="heading" value="<%= headerDraft.heading %>" required maxlength="80" autofocus></label>
+    <label>설명 <textarea name="description" rows="3" maxlength="300"><%= headerDraft.description %></textarea></label>
+    <div class="actions"><button class="button primary" type="submit">저장</button></div>
+  </form>
+</dialog>
+
+<div class="portfolio-grid">
+  <% for (const { item, title, cover } of entries) {
+    const href = '/portfolio/' + item.id;
+    const selected = cover.tiles.filter(Boolean);
+    const tiles = selected.length === 1 ? selected : cover.tiles;
+  %>
+    <article class="portfolio-card">
+      <a class="portfolio-card-link" href="<%= href %>">
+        <div class="portfolio-cover<%= selected.length > 1 ? ' portfolio-cover-grid' : '' %>" style="--cover-color:<%= cover.color %>" aria-hidden="true">
+          <% if (!tiles.length) { %><span class="portfolio-cover-title"><%= title %></span><% } %>
+          <% for (const tile of tiles) { %>
+            <div class="portfolio-cover-tile">
+              <% if (tile) { %><img src="<%= href %>/files/<%= tile.id %>" alt="" loading="lazy" style="--cover-x:<%= tile.x %>%;--cover-y:<%= tile.y %>%;--cover-zoom:<%= tile.zoom %>"><% } %>
+            </div>
+          <% } %>
+        </div>
+        <h2><%= title %></h2>
+      </a>
+    </article>
+  <% } %>
+  <a class="portfolio-cover portfolio-add-tile" href="/portfolio/new" aria-label="New Portfolio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </a>
+</div>
+<%- include('partials/end') %>

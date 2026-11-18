@@ -1,0 +1,104 @@
+<%
+  const projectPath = '/projects/' + project.id;
+  const files = node.revision?.files || [];
+  const singleColumn = !files.length && !active.item.action;
+  const feedbackOptions = entries.filter(entry => entry.key !== active.key).map(entry => ({
+    label: entry.label,
+    href: feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: entry.key }) + (fromList ? '?from=list' : '')
+  }));
+%>
+<%- include('partials/start', { breadcrumbLinks: [
+  { label: project.name, href: projectPath },
+  { label: node.title, href: nodeDetailUrl(node) }
+], breadcrumbFeedback: feedbackOptions }) %>
+<header class="page-heading feedback-detail-heading<%= singleColumn ? ' feedback-detail-heading-single' : '' %>">
+  <div>
+    <h1><%= active.label %></h1>
+    <p><%= project.name %> · <%= shortDate(node.date) %></p>
+  </div>
+  <form method="post" action="<%= feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: active.key }) %>/delete" data-feedback-delete>
+    <button class="button" type="submit">피드백 삭제</button>
+  </form>
+</header>
+<div class="feedback-detail-grid <%= files.length ? 'feedback-with-attachments' : singleColumn ? 'feedback-detail-single' : '' %>" style="--project-color:<%= project.color %>">
+  <section class="panel form-panel feedback-detail-answer">
+    <div class="row-heading">
+      <% if (active.item.style || active.item.tone) { %><span class="status work feedback-tone-badge"><%= active.item.style || active.item.tone %></span><% } %>
+      <div class="feedback-reading-options" data-feedback-reading-options hidden>
+        <div class="feedback-font-picker">
+          <label for="feedback-font">글꼴</label>
+          <select id="feedback-font">
+            <option value="default">기본</option>
+            <option value="serif">명조체</option>
+          </select>
+        </div>
+        <div class="feedback-font-picker">
+          <label for="feedback-font-size">글자 크기</label>
+          <select id="feedback-font-size">
+            <option value="small">작게</option>
+            <option value="default" selected>기본</option>
+            <option value="large">크게</option>
+            <option value="extra-large">아주 크게</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <% const highlightUrl = feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: active.key }) + '/highlights'; %>
+    <div data-feedback-highlights="<%= highlightUrl %>" data-ranges="<%= JSON.stringify({ highlights: active.item.highlights || [], underlines: active.item.underlines || [] }) %>">
+      <div class="feedback-highlighter" hidden>
+        <div class="feedback-highlighter-tools">
+          <button type="button" class="button highlight-tool" data-highlight-mode="paint" aria-label="형광펜 칠하기" aria-pressed="false" title="형광펜 칠하기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 15-4-4L16 1l5 5-9 10H9l-4 4-2-2 3-4M4 22h9"/></svg>
+          </button>
+          <button type="button" class="button highlight-tool" data-highlight-mode="underline" aria-label="밑줄 긋기" aria-pressed="false" title="밑줄 긋기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v8a6 6 0 0 0 12 0V3M4 21h16"/></svg>
+          </button>
+          <button type="button" class="button highlight-tool" data-highlight-mode="edit" aria-label="지우개" aria-pressed="false" title="지우개">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21H9l-6-6a2 2 0 0 1 0-3l8-8a2 2 0 0 1 3 0l7 7a2 2 0 0 1 0 3l-7 7M7 8l9 9"/></svg>
+          </button>
+          <div class="highlight-palette" data-palette="highlight" role="group" aria-label="형광펜 색상">
+            <% for (const [color, label] of Object.entries(highlightColors)) { %>
+              <button type="button" class="button highlight-swatch" data-highlight-color="<%= color %>" aria-label="<%= label %>" title="<%= label %>" aria-pressed="<%= color === 'yellow' %>"></button>
+            <% } %>
+          </div>
+          <div class="highlight-palette" data-palette="underline" role="group" aria-label="밑줄 색상" hidden>
+            <% for (const [color, label] of Object.entries(underlineColors)) { %>
+              <button type="button" class="button highlight-swatch underline-swatch" data-underline-color="<%= color %>" aria-label="<%= label %>" title="<%= label %>" aria-pressed="<%= color === 'black' %>"></button>
+            <% } %>
+          </div>
+          <div class="highlight-palette" data-highlight-layers role="group" aria-label="편집할 표시" hidden>
+            <button type="button" class="button" data-highlight-layer="highlight" aria-pressed="false">형광펜</button>
+            <button type="button" class="button" data-highlight-layer="underline" aria-pressed="false">밑줄</button>
+          </div>
+          <button type="button" class="button" data-highlight-delete hidden>삭제하기</button>
+        </div>
+        <p class="muted" role="status">형광펜이나 밑줄을 켜고 답변을 드래그하세요.</p>
+      </div>
+      <div class="response ai-tone feedback-highlight-surface">
+        <div class="feedback-answer feedback-markdown" data-highlight-text data-source-text="<%= answerText %>"><%- feedbackMarkdown(answerText, true) %></div>
+        <button type="button" class="highlight-grip" data-highlight-edge="start" aria-label="표시 시작 범위 조절" hidden></button>
+        <button type="button" class="highlight-grip" data-highlight-edge="end" aria-label="표시 끝 범위 조절" hidden></button>
+      </div>
+    </div>
+    <div class="feedback-controls">
+      <% if (!active.item.adoptedAt) { %>
+        <form method="post" action="<%= feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: active.key }) %>/adopt"><button class="button primary">피드백 채택</button></form>
+      <% } else { %>
+        <a class="button" href="<%= feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: active.key }) %>/action">조치 기록</a>
+      <% } %>
+      <a class="button" href="/projects/<%= project.id %>/nodes/<%= node.id %>/feedback?retry=<%= active.key %><%= fromList ? '&from=list' : '' %>">추가 피드백 생성</a>
+      <a class="button" href="<%= feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: active.key }) %>/todo<%= fromList ? '?from=list' : '' %>">＋ 할 일로 추가</a>
+    </div>
+  </section>
+  <% if (files.length) { %>
+    <aside class="feedback-attachment-sidebar" aria-label="피드백 관련 자료">
+      <%- include('partials/feedback-attachments', { node, files }) %>
+      <% if (active.item.action) { %><%- include('partials/feedback-controls', { node, item: active.item, fromList }) %><% } %>
+    </aside>
+  <% } else if (active.item.action) { %>
+    <%- include('partials/feedback-controls', { node, item: active.item, fromList }) %>
+  <% } %>
+</div>
+<script src="/feedback-highlights.js" defer></script>
+<% if (files.length) { %><script src="/feedback-attachments.js" defer></script><% } %>
+<%- include('partials/end') %>

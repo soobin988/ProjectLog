@@ -1,0 +1,34 @@
+<%- include('partials/start', { breadcrumbLinks: [{ label: project.name, href: '/projects/' + project.id },
+  { label: 'AI 피드백', href: back }] }) %>
+<header class="page-heading">
+  <div>
+    <h1><%= title %></h1>
+    <p><%= project.name %> · <%= node.title %></p>
+  </div>
+</header>
+<div class="feedback-grid">
+  <section class="panel form-panel">
+    <h2>관련 피드백</h2>
+    <div class="response ai-tone"><div class="feedback-answer feedback-markdown"><%- feedbackMarkdown(feedback.text) %></div></div>
+  </section>
+  <section class="panel form-panel" aria-label="조치와 결과">
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form method="post">
+      <label>실행한 조치<textarea name="action" rows="5" maxlength="3000" required><%= draft.text || '' %></textarea></label>
+      <label>결과
+        <select name="result">
+          <option value="" <%= feedback.action?.result ? 'disabled' : '' %>>아직 확인 중</option>
+          <% for (const [value, label] of Object.entries(feedbackResults)) { %>
+            <option value="<%= value %>" <%= draft.result === value ? 'selected' : '' %>><%= label %></option>
+          <% } %>
+        </select>
+      </label>
+      <label>결과 메모 (선택)<textarea name="resultNote" rows="3" maxlength="3000"><%= draft.note || '' %></textarea></label>
+      <div class="actions">
+        <a class="button" href="<%= back %>">취소</a>
+        <button class="button primary">저장</button>
+      </div>
+    </form>
+  </section>
+</div>
+<%- include('partials/end') %>

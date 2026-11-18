@@ -1,0 +1,30 @@
+<% const supportTitle = '개발자 문의'; %>
+<%- include('partials/start', { title: supportTitle }) %>
+<header class="page-heading"><h1><%= supportTitle %></h1></header>
+<section class="panel form-panel suggestions-panel" aria-label="문의 보내기">
+  <% if (sent) { %><p role="status">문의를 보냈어요.</p><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (typeof account !== 'undefined') { %>
+    <dl class="suggestion-identity"><dt>회원 UID</dt><dd class="suggestion-uid"><%= account.uid %></dd></dl>
+  <% } %>
+  <form method="post" action="/suggestions">
+    <label>문의 내용<textarea name="message" rows="6" maxlength="3000" required><%= draft %></textarea></label>
+    <div class="actions"><button class="button primary">문의 보내기</button></div>
+  </form>
+</section>
+<% if (inbox) { %>
+  <section class="suggestions-inbox" aria-labelledby="suggestions-inbox-title">
+    <h2 id="suggestions-inbox-title">받은 문의</h2>
+    <% if (!inbox.length) { %><p class="muted">아직 받은 문의가 없어요.</p><% } %>
+    <% for (const item of inbox) { const date = new Date(Number(item.submitted) * 1000); %>
+      <article class="panel suggestion-entry">
+        <div class="row-heading">
+          <strong><%= item.uid == null ? '비회원' : 'UID ' + item.uid %></strong>
+          <time class="muted" datetime="<%= date.toISOString() %>"><%= new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(date) %></time>
+        </div>
+        <p><%= item.message %></p>
+      </article>
+    <% } %>
+  </section>
+<% } %>
+<%- include('partials/end') %>

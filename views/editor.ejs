@@ -1,0 +1,81 @@
+<% const nodeOrigin = typeof nodeBack !== 'undefined' && nodeBack;
+const back = followUp?.back || nodeOrigin || '/projects/' + project.id + (node.id ? '#node-' + node.id : ''); %>
+<%- include('partials/start', { breadcrumbLinks: [{ label: '프로젝트', href: '/projects' },
+  { label: followUp ? '이전 피드백' : nodeOrigin ? node.title : project.name, href: back }] }) %>
+<header class="page-heading"><div><h1><%= title %></h1><% if (followUp) { %><p><%= project.name %> · 이전 결과 <%= feedbackResults[followUp.result] %></p><% } %></div></header>
+<section class="panel form-panel editor-panel">
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% const requiresArtifact = node.artifactRequired ?? (!node.id && !uploading); %>
+  <form method="post" enctype="multipart/form-data">
+    <div class="fields node-status-fields">
+      <label>작업 날짜<input name="date" type="date" value="<%= node.date %>" required></label>
+      <label>작업 상태<select name="status"><% for (const [key, label] of Object.entries(workStatuses)) { %><option value="<%= key %>" <%= workStatusFor(node) === key ? 'selected' : '' %>><%= label %></option><% } %></select></label>
+      <label>문제 상태<select name="errorStatus"><% for (const [key, label] of Object.entries(errorStatuses)) { %><option value="<%= key %>" <%= errorStatusFor(node) === key ? 'selected' : '' %>><%= label %></option><% } %></select></label>
+    </div>
+    <label>이전 작업 노드 (선택)<select name="parentNodeId">
+      <option value="">최상위 작업</option>
+      <% for (const parent of projectNodes(project.id).filter(item => item.id !== node.id)) { %>
+        <option value="<%= parent.id %>" <%= (node.parentNodeId || followUp?.source.nodeId) === parent.id ? 'selected' : '' %>><%= parent.title %></option>
+      <% } %>
+    </select></label>
+    <label>문제 유형 (선택)<input name="issueType" maxlength="80" value="<%= node.issueType || '' %>" placeholder="예. DB 연결, 권한, 구도"></label>
+    <div class="editor-field">
+      <label>제목<%= requiresArtifact ? ' (선택)' : '' %><input name="title" value="<%= node.title || '' %>" <%= requiresArtifact ? '' : 'required' %> maxlength="120" placeholder="<%= requiresArtifact ? '비워 두면 작업물에서 제목을 정합니다' : '예. UPDATE 오류' %>"></label>
+      <label class="source-check"><input type="checkbox" name="titleAi" value="yes" <%= node.ai?.title ? 'checked' : '' %>> <span>AI가 작성·수정한 제목</span></label>
+    </div>
+    <div class="editor-field">
+      <label>설명 (선택)<textarea name="note" rows="4" maxlength="4000" placeholder="작업 내용이나 발생한 문제를 적어 주세요"><%= node.note || '' %></textarea></label>
+      <label class="source-check"><input type="checkbox" name="noteAi" value="yes" <%= node.ai?.note ? 'checked' : '' %>> <span>AI가 작성·수정한 작업 내용</span></label>
+    </div>
+    <fieldset class="revision-fields" data-artifact-picker>
+      <legend><%= requiresArtifact ? '작업물 등록 (필수)' : uploading ? '수정본 등록' : '작업물 첨부' %></legend>
+      <div class="artifact-methods" role="group" aria-label="작업물 등록 방식" hidden>
+        <button class="button" type="button" aria-pressed="false" aria-controls="artifact-github">
+          <%- include('partials/artifact-icon', { icon: 'github' }) %>
+          GitHub
+        </button>
+        <button class="button" type="button" aria-pressed="false" aria-controls="artifact-code">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/></svg>
+          코드
+        </button>
+        <button class="button" type="button" aria-pressed="false" aria-controls="artifact-zip">
+          <%- include('partials/artifact-icon', { icon: 'zip' }) %>
+          ZIP 파일
+        </button>
+        <button class="button" type="button" aria-pressed="false" aria-controls="artifact-image">
+          <%- include('partials/artifact-icon', { icon: 'image' }) %>
+          이미지
+        </button>
+        <% if (!requiresArtifact || node.revision?.link) { %>
+          <button class="button" type="button" aria-pressed="false" aria-controls="artifact-link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-7 7-1 1a3 3 0 0 1-4-4l4-4a3 3 0 0 1 4 0m4 6a3 3 0 0 0 4 0l4-4a3 3 0 0 0-4-4l-1 1"/></svg>
+            관련 링크
+          </button>
+        <% } %>
+      </div>
+      <div class="revision-inputs">
+        <label id="artifact-github">GitHub 링크<input type="url" name="github" maxlength="2048" value="<%= node.revision?.github || '' %>" placeholder="https://github.com/"></label>
+        <% if (!requiresArtifact || node.revision?.link) { %>
+          <label id="artifact-link">관련 링크<input type="url" name="link" maxlength="2048" value="<%= node.revision?.link || '' %>" placeholder="https://"></label>
+        <% } %>
+        <div class="editor-field" id="artifact-code">
+          <label>코드<textarea class="code-input" name="code" rows="5" maxlength="10000" spellcheck="false" wrap="off">
+<%= node.revision?.code || '' %></textarea></label>
+          <label class="source-check"><input type="checkbox" name="codeAi" value="yes" <%= node.revision?.codeAi ? 'checked' : '' %>> <span>AI가 작성·수정한 코드</span></label>
+        </div>
+        <label id="artifact-zip">ZIP 파일<input type="file" name="files" accept=".zip" multiple><span class="muted">노드당 최대 <%= maxFiles %>개 · 파일당 8MB</span></label>
+        <label id="artifact-image">이미지 파일<input type="file" name="files" accept=".png,.jpg,.jpeg,.gif,.webp" multiple><span class="muted">PNG, JPG, GIF, WEBP · 노드당 최대 <%= maxFiles %>개 · 파일당 8MB</span></label>
+        <% if (node.revision?.files?.length) { %>
+          <ul class="artifact-list">
+            <% for (const file of node.revision.files) { %><li><%= file.name %></li><% } %>
+          </ul>
+        <% } %>
+      </div>
+    </fieldset>
+    <div class="actions"><a class="button" href="<%= back %>">취소</a><button class="button primary"><%= uploading ? '수정본 업로드' : '기록 저장' %></button></div>
+  </form>
+  <% if (node.id) { %><form action="<%= nodeDetailUrl(node) %>/delete" method="post" data-confirm="작업 노드와 연결된 피드백을 정말 삭제하시겠습니까?">
+    <div class="actions"><button class="button feedback-delete">노드 삭제</button></div>
+  </form><% } %>
+</section>
+<%- include('partials/end') %>

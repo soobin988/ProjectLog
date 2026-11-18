@@ -1,0 +1,2 @@
+<label>할 일<input name="title" value="<%= draft.title || '' %>" maxlength="160" required autofocus></label>
+<label>프로젝트<%- include('todo-project', { selected: draft.projectId }) %></label>

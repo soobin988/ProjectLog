@@ -1,0 +1,29 @@
+<%- include('partials/start', { breadcrumbLinks: [{ label: project.name, href: '/projects/' + project.id },
+  { label: 'AI 피드백', href: back }] }) %>
+<header class="page-heading">
+  <div>
+    <h1>피드백에서 할 일 추가</h1>
+    <p><%= project.name %> · <%= node.title %></p>
+  </div>
+</header>
+<div class="feedback-grid">
+  <section class="panel form-panel">
+    <h2>AI 피드백</h2>
+    <div class="response ai-tone">
+      <% if (feedback.style) { %><p class="feedback-mode"><%= feedback.style %></p><% } %>
+      <div class="feedback-answer feedback-markdown"><%- feedbackMarkdown(feedback.text) %></div>
+    </div>
+  </section>
+  <section class="panel form-panel" aria-label="할 일 등록">
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form method="post">
+      <label>할 일<input name="title" value="<%= draft.title %>" maxlength="160" required></label>
+      <label>예정일<input type="date" name="dueDate" value="<%= draft.dueDate %>"></label>
+      <div class="actions">
+        <a class="button" href="<%= back %>">취소</a>
+        <button class="button primary">할 일 추가</button>
+      </div>
+    </form>
+  </section>
+</div>
+<%- include('partials/end') %>

@@ -1,0 +1,52 @@
+<%
+  const projectPath = '/projects/' + project.id;
+  const nodePath = nodeDetailUrl(node);
+  const hasRecord = node.note || node.revision || node.action || node.result;
+  const answerUrl = key => feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: key });
+  const latestAnswer = feedbackEntries(node).at(-1);
+%>
+<%- include('partials/start', { breadcrumbLinks: [{ label: project.name, href: projectPath }] }) %>
+<header class="page-heading">
+  <div>
+    <h1><%= node.title %></h1>
+    <p class="node-review-meta"><time datetime="<%= node.date %>"><%= shortDate(node.date) %></time><%- include('partials/status', { node }) %></p>
+    <% if (node.parentNodeId) { const parent = projectNodes(project.id).find(item => item.id === node.parentNodeId); if (parent) { %>
+      <p><a class="text-link" href="<%= nodeDetailUrl(parent) %>">이전 작업: <%= parent.title %></a></p>
+    <% } } %>
+  </div>
+  <div class="actions">
+    <a class="button" href="<%= nodePath %>/edit?from=node">수정</a>
+    <a class="button" href="<%= nodePath %>/revisions">수정 이력</a>
+    <% if (!latestAnswer) { %><a class="button primary" href="<%= nodePath %>/feedback?from=node">AI 피드백 요청</a><% } %>
+  </div>
+</header>
+<div class="feedback-grid node-review-grid">
+  <section class="panel form-panel" aria-labelledby="node-decisions-title">
+    <h2 id="node-decisions-title">내 결정과 수정</h2>
+    <% if (hasRecord) { %><%- include('partials/record', { node, showFeedback: false }) %><% } %>
+    <% if (!hasRecord) { %><p class="muted">아직 기록된 결정이나 수정이 없어요.</p><% } %>
+  </section>
+  <section class="panel form-panel" aria-labelledby="node-answers-title">
+    <div class="row-heading"><h2 id="node-answers-title">AI 답변</h2><span class="panel-count"><%= entries.length %>건</span></div>
+    <% if (!entries.length) { %><p class="muted">아직 받은 AI 답변이 없어요.</p><% } %>
+    <% for (const [index, { item, key, label }] of entries.entries()) {
+      const pinned = node.pinnedFeedbackId === key;
+      const pinLabel = label + (pinned ? ' 고정 해제' : ' 고정');
+    %>
+      <article class="node-review-item">
+        <details class="response ai-tone node-review-answer" <%= index === 0 ? 'open' : '' %>>
+          <summary><strong><%= label %></strong><% if (pinned) { %> <span class="status node-answer-pinned">고정됨</span><% } %><% if (item.style || item.tone) { %> <span class="feedback-mode"><%= item.style || item.tone %></span><% } %></summary>
+          <div class="feedback-answer feedback-markdown"><%- feedbackMarkdown(item.text) %></div>
+          <a class="text-link" href="<%= answerUrl(key) %>">자세히 보기 <span aria-hidden="true">↗</span></a>
+        </details>
+        <form class="node-answer-pin" action="<%= answerUrl(key) %>/pin" method="post">
+          <button class="button" name="operation" value="<%= pinned ? 'unpin' : 'pin' %>" aria-pressed="<%= pinned %>" aria-label="<%= pinLabel %>" title="<%= pinLabel %>">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4l1-1V2H7v1l1 1v5a2 2 0 0 1-2 2H5v3h14v-3h-1a2 2 0 0 1-2-2ZM12 14v8"/></svg>
+          </button>
+        </form>
+      </article>
+    <% } %>
+    <% if (latestAnswer) { %><div class="feedback-controls"><a class="button" href="<%= nodePath %>/feedback?retry=<%= latestAnswer.key %>&amp;from=node">추가 피드백 생성</a></div><% } %>
+  </section>
+</div>
+<%- include('partials/end') %>

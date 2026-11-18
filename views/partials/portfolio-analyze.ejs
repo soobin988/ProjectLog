@@ -1,0 +1,34 @@
+<button class="button portfolio-action-icon" type="button" aria-label="AI 분석" title="AI 분석"
+  aria-haspopup="dialog" aria-controls="portfolio-analysis-dialog" data-open-portfolio-analysis>
+  <%- include('openai-icon') %>
+</button>
+<dialog class="panel form-panel portfolio-analysis-dialog" id="portfolio-analysis-dialog" aria-labelledby="portfolio-analysis-title">
+  <header class="row-heading">
+    <h2 id="portfolio-analysis-title">스타일과 강점 분석</h2>
+    <form method="dialog"><button class="button" type="submit">닫기</button></form>
+  </header>
+  <form class="portfolio-analysis-form" method="post" action="<%= action %>" data-portfolio-analysis>
+    <label>분석 범위
+      <select name="analysisCategory" autofocus>
+        <option value="*">전체</option>
+        <% for (const { id, name } of categories) { %>
+          <option value="<%= id %>"<%= id === selected ? ' selected' : '' %>><%= name %></option>
+        <% } %>
+      </select>
+    </label>
+    <fieldset class="portfolio-sources">
+      <legend>분석 관점</legend>
+      <div class="portfolio-analysis-tags">
+        <% for (const [key, { label }] of Object.entries(analysisTags)) { %>
+          <label><input type="checkbox" name="analysisTags" value="<%= key %>"<%= ['style', 'strengths'].includes(key) ? ' checked' : '' %>><span><%= label %></span></label>
+        <% } %>
+      </div>
+    </fieldset>
+    <p class="muted">선택한 범위의 이미지 일부와 파일 이름·링크 정보를 OpenAI로 보냅니다. 전체를 선택하면 작업 기록도 포함돼요.</p>
+    <div class="actions">
+      <a class="text-link" href="<%= action.replace(/\/analyze$/, '/analysis') %>">이전 분석 보기</a>
+      <button class="button primary" type="submit"<%= enabled ? '' : ' disabled' %>>분석 요청</button>
+    </div>
+    <p class="muted" data-analysis-status role="status" hidden>AI가 분석하고 있어요.</p>
+  </form>
+</dialog>

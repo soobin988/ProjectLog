@@ -1,0 +1,30 @@
+<%- include('partials/start') %>
+<header class="page-heading"><h1>알림</h1></header>
+<section class="notifications" aria-label="알림 목록">
+  <nav class="notification-tabs" aria-label="알림 유형">
+    <a href="/notifications?tab=issues" <%- tab === 'issues' ? 'aria-current="page"' : '' %>>오류<% if (unreadIssues) { %><span class="panel-count"><%= unreadIssues %></span><% } %></a>
+    <a href="/notifications?tab=feedback" <%- tab === 'feedback' ? 'aria-current="page"' : '' %>>AI 피드백<% if (unreadFeedback) { %><span class="panel-count"><%= unreadFeedback %></span><% } %></a>
+  </nav>
+  <% if (!Object.keys(groups).length) { %><p class="panel empty"><%= tab === 'issues' ? '오류' : 'AI 피드백' %> 알림이 없습니다.</p><% } %>
+  <% for (const [index, [date, items]] of Object.entries(groups).entries()) { %>
+    <details class="panel notification-day" name="notification-date" <%= index === 0 ? 'open' : '' %>>
+      <summary><time datetime="<%= date %>"><%= date.slice(0, 4) %>년 <%= shortDate(date) %></time><span class="panel-count"><%= items.length %>건</span></summary>
+      <ul>
+        <% for (const item of items) { %>
+          <li class="notification <%= item.read ? 'notification-read' : '' %>" id="alert-<%= item.id %>" style="--project-color:<%= item.project.color %>">
+            <form action="/notifications/<%= item.id %>/read" method="post">
+              <button type="submit" <%= item.read ? 'disabled' : '' %>>
+                <span class="notification-meta"><%= item.project.name %><% if (item.status) { %> · <%= item.status %><% } %></span>
+                <strong><%= item.title %></strong>
+                <% if (item.excerpt) { %><span class="notification-excerpt"><%= item.excerpt %></span><% } %>
+                <span class="notification-state"><%= item.read ? '✓ 확인함' : '미확인 · 눌러서 확인' %></span>
+              </button>
+            </form>
+            <a class="notification-record" href="<%= item.destination %>">기록 보기 ↗</a>
+          </li>
+        <% } %>
+      </ul>
+    </details>
+  <% } %>
+</section>
+<%- include('partials/end') %>

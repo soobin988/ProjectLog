@@ -1,0 +1,55 @@
+<% const feedback = typeof showFeedback === 'undefined' ? node.feedback[0] :
+  showFeedback === 'legacy' ? node.feedback.find(item => !item.id) : undefined; %>
+<% if (node.note) { %>
+  <div class="record-note <%= node.ai?.note ? 'ai-tone' : '' %>">
+    <span class="record-attribution"><%= isIssue(node) ? '발생한 문제' : '작업 내용' %><% if (node.ai?.note) { %> <span class="attribution">AI 작성·수정</span><% } %></span>
+    <p><%= node.note %></p>
+  </div>
+<% } %>
+<% if (node.revision) { %>
+  <section class="record-note revision-record" aria-label="수정본">
+    <span class="record-attribution"><%= node.artifactRequired ? '작업물' : '수정본' %></span>
+    <% if (node.revision.github || node.revision.link) { %>
+      <div class="record-links">
+        <% if (node.revision.github) { %><a class="text-link" href="<%= node.revision.github %>" target="_blank" rel="noopener noreferrer">GitHub 링크 ↗</a><% } %>
+        <% if (node.revision.link) { %><a class="text-link" href="<%= node.revision.link %>" target="_blank" rel="noopener noreferrer">관련 링크 ↗</a><% } %>
+      </div>
+    <% } %>
+    <% if (node.revision.code) { %>
+      <details class="revision-code <%= node.revision.codeAi ? 'ai-tone' : '' %>">
+        <summary>코드 보기<% if (node.revision.codeAi) { %> <span class="attribution">AI 작성·수정</span><% } %></summary>
+        <pre><code><%= node.revision.code %></code></pre>
+      </details>
+    <% } %>
+    <% if (node.revision.files?.length) { %>
+      <ul class="artifact-list">
+        <% for (const file of node.revision.files) {
+          const url = '/projects/' + node.projectId + '/nodes/' + node.id + '/files/' + file.id;
+        %>
+          <li>
+            <% if (file.type.startsWith('image/')) { %><img src="<%= url %>" alt="<%= file.name %>" loading="lazy"><% } %>
+            <a class="text-link" href="<%= url %>?download=1"><%= file.name %> ↓</a>
+          </li>
+        <% } %>
+      </ul>
+    <% } %>
+  </section>
+<% } %>
+<% if (feedback || node.action || node.result) { %>
+  <dl class="record-steps">
+    <% if (feedback) { %>
+      <div class="record-step ai-tone">
+        <dt>AI 피드백</dt>
+        <dd>
+          <div class="feedback-answer feedback-markdown"><%- feedbackMarkdown(feedback.text) %></div>
+          <% if (typeof showFeedback !== 'undefined' && showFeedback === 'legacy') { %>
+            <% const url = feedbackSourceUrl({ projectId: node.projectId, nodeId: node.id, feedbackId: feedbackIdFor(node, feedback) }); %>
+            <a class="text-link" href="<%= url %><%= typeof fromList !== 'undefined' && fromList ? '?from=list' : '' %>">피드백 자세히 보기 ↗</a>
+          <% } %>
+        </dd>
+      </div>
+    <% } %>
+    <% if (node.action) { %><div class="record-step <%= node.ai?.action ? 'ai-tone' : '' %>"><dt>실제 조치<% if (node.ai?.action) { %><span>AI 작성·수정</span><% } %></dt><dd><%= node.action %></dd></div><% } %>
+    <% if (node.result) { %><div class="record-step <%= node.ai?.result ? 'ai-tone' : '' %>"><dt>결과<% if (node.ai?.result) { %><span>AI 작성·수정</span><% } %></dt><dd><%= node.result %> <%- include('status', { node }) %></dd></div><% } %>
+  </dl>
+<% } %>

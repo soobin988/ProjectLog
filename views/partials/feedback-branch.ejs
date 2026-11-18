@@ -1,0 +1,24 @@
+<% const feedbackUrl = '/projects/' + node.projectId + '/nodes/' + node.id + '/feedback'; %>
+<% const answers = feedbackEntries(node);
+const entries = fromList ? answers : answers.filter(entry => entry.item.id);
+const latestAnswer = answers.at(-1);
+const showRequest = typeof showRequestLink === 'undefined' || showRequestLink; %>
+<% if (showRequest || latestAnswer) { %>
+<div class="feedback-branch">
+  <% if (latestAnswer) { %>
+    <div class="feedback-children">
+      <% for (const { key, label } of entries) { %>
+        <div class="feedback-child" id="feedback-<%= key %>">
+          <a class="response ai-tone feedback-card-link" href="<%= feedbackUrl %>/<%= key %><%= fromList ? '?from=list' : '' %>">
+            <span><%= label %></span>
+            <span aria-hidden="true">›</span>
+          </a>
+        </div>
+      <% } %>
+      <a class="button feedback-more" href="<%= feedbackUrl %>?retry=<%= latestAnswer.key %><%= fromList ? '&from=list' : '' %>">✦ 추가 피드백 생성</a>
+    </div>
+  <% } else if (showRequest) { %>
+    <a class="button feedback-trigger" href="<%= feedbackUrl %><%= fromList ? '?from=list' : '' %>">✦ AI에게 요청하기</a>
+  <% } %>
+</div>
+<% } %>

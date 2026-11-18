@@ -1,0 +1,2889 @@
+{
+  "database": "Project Log",
+  "generatedAt": "2026-11-18T11:18:37.059Z",
+  "tables": [
+    {
+      "name": "activity_logs",
+      "columns": [
+        {
+          "tableName": "activity_logs",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "project_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 4
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "activity_type",
+          "type": "varchar(40)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "description",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "progress",
+          "type": "tinyint unsigned",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 8
+        },
+        {
+          "tableName": "activity_logs",
+          "name": "todo_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 9
+        }
+      ]
+    },
+    {
+      "name": "alerts",
+      "columns": [
+        {
+          "tableName": "alerts",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "alerts",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "alerts",
+          "name": "alert_key",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "alerts",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 4
+        },
+        {
+          "tableName": "alerts",
+          "name": "feedback_id",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 5
+        },
+        {
+          "tableName": "alerts",
+          "name": "type",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "alerts",
+          "name": "message",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "alerts",
+          "name": "is_read",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "alerts",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        }
+      ]
+    },
+    {
+      "name": "feedback_actions",
+      "columns": [
+        {
+          "tableName": "feedback_actions",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "feedback_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "action_content",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "result",
+          "type": "enum('success','failed','pending')",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 5
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "result_note",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "feedback_actions",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        }
+      ]
+    },
+    {
+      "name": "feedbacks",
+      "columns": [
+        {
+          "tableName": "feedbacks",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "public_id",
+          "type": "varchar(100)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "is_legacy",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "mode",
+          "type": "varchar(40)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "style",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "request_content",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "content",
+          "type": "mediumtext",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "selected",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 9
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "adopted_at",
+          "type": "datetime(3)",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 10
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "pinned",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 11
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "regenerated_from",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 12
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "next_node_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 13
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "highlights",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 14
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "underlines",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 15
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 16
+        },
+        {
+          "tableName": "feedbacks",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 17
+        }
+      ]
+    },
+    {
+      "name": "node_files",
+      "columns": [
+        {
+          "tableName": "node_files",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "node_files",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "node_files",
+          "name": "revision_id",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "node_files",
+          "name": "original_name",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "node_files",
+          "name": "stored_name",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 5
+        },
+        {
+          "tableName": "node_files",
+          "name": "file_path",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "node_files",
+          "name": "file_type",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "node_files",
+          "name": "file_size",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "node_files",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "node_files",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        }
+      ]
+    },
+    {
+      "name": "node_revisions",
+      "columns": [
+        {
+          "tableName": "node_revisions",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "version",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "content",
+          "type": "mediumtext",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "github",
+          "type": "varchar(2048)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "related_link",
+          "type": "varchar(2048)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "code_ai",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "snapshot_title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "snapshot_content",
+          "type": "mediumtext",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "node_revisions",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        }
+      ]
+    },
+    {
+      "name": "nodes",
+      "columns": [
+        {
+          "tableName": "nodes",
+          "name": "id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "nodes",
+          "name": "project_id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "nodes",
+          "name": "parent_node_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "nodes",
+          "name": "title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "nodes",
+          "name": "type",
+          "type": "varchar(40)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "nodes",
+          "name": "content",
+          "type": "mediumtext",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "nodes",
+          "name": "status",
+          "type": "enum('work','complete')",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "nodes",
+          "name": "error_status",
+          "type": "enum('','issue','resolved')",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "nodes",
+          "name": "issue_type",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "nodes",
+          "name": "work_date",
+          "type": "date",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 10
+        },
+        {
+          "tableName": "nodes",
+          "name": "action_content",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 11
+        },
+        {
+          "tableName": "nodes",
+          "name": "result_content",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 12
+        },
+        {
+          "tableName": "nodes",
+          "name": "title_ai",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 13
+        },
+        {
+          "tableName": "nodes",
+          "name": "content_ai",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 14
+        },
+        {
+          "tableName": "nodes",
+          "name": "action_ai",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 15
+        },
+        {
+          "tableName": "nodes",
+          "name": "result_ai",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 16
+        },
+        {
+          "tableName": "nodes",
+          "name": "artifact_required",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 17
+        },
+        {
+          "tableName": "nodes",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 18
+        },
+        {
+          "tableName": "nodes",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 19
+        },
+        {
+          "tableName": "nodes",
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 20
+        }
+      ]
+    },
+    {
+      "name": "portfolio_analyses",
+      "columns": [
+        {
+          "tableName": "portfolio_analyses",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_analyses",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_analyses",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "portfolio_analyses",
+          "name": "analysis_content",
+          "type": "mediumtext",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "portfolio_analyses",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        }
+      ]
+    },
+    {
+      "name": "portfolio_categories",
+      "columns": [
+        {
+          "tableName": "portfolio_categories",
+          "name": "id",
+          "type": "char(20)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_categories",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_categories",
+          "name": "name",
+          "type": "varchar(40)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "portfolio_categories",
+          "name": "name_key",
+          "type": "varbinary(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        }
+      ]
+    },
+    {
+      "name": "portfolio_contacts",
+      "columns": [
+        {
+          "tableName": "portfolio_contacts",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_contacts",
+          "name": "settings",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "portfolio_covers",
+      "columns": [
+        {
+          "tableName": "portfolio_covers",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_covers",
+          "name": "settings",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "portfolio_files",
+      "columns": [
+        {
+          "tableName": "portfolio_files",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "file_type",
+          "type": "varchar(16)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "original_name",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "stored_name",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "file_path",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "file_size",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "mime_type",
+          "type": "varchar(32)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "caption",
+          "type": "varchar(200)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "is_thumbnail",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 11
+        },
+        {
+          "tableName": "portfolio_files",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 12
+        }
+      ]
+    },
+    {
+      "name": "portfolio_links",
+      "columns": [
+        {
+          "tableName": "portfolio_links",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_links",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_links",
+          "name": "link_type",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "portfolio_links",
+          "name": "url",
+          "type": "varchar(255)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "portfolio_links",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        }
+      ]
+    },
+    {
+      "name": "portfolio_materials",
+      "columns": [
+        {
+          "tableName": "portfolio_materials",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_materials",
+          "name": "settings",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "portfolio_pages",
+      "columns": [
+        {
+          "tableName": "portfolio_pages",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_pages",
+          "name": "heading",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_pages",
+          "name": "description",
+          "type": "varchar(300)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "portfolio_technologies",
+      "columns": [
+        {
+          "tableName": "portfolio_technologies",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolio_technologies",
+          "name": "portfolio_id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolio_technologies",
+          "name": "technology",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "portfolios",
+      "columns": [
+        {
+          "tableName": "portfolios",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "portfolios",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "portfolios",
+          "name": "project_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "portfolios",
+          "name": "title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "portfolios",
+          "name": "description",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "portfolios",
+          "name": "role",
+          "type": "varchar(100)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "portfolios",
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "portfolios",
+          "name": "category",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "portfolios",
+          "name": "start_date",
+          "type": "char(10)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "portfolios",
+          "name": "end_date",
+          "type": "char(10)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        },
+        {
+          "tableName": "portfolios",
+          "name": "is_public",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 11
+        },
+        {
+          "tableName": "portfolios",
+          "name": "version",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 12
+        },
+        {
+          "tableName": "portfolios",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 13
+        },
+        {
+          "tableName": "portfolios",
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 14
+        }
+      ]
+    },
+    {
+      "name": "projectlog_activity",
+      "columns": [
+        {
+          "tableName": "projectlog_activity",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_activity",
+          "name": "minute_slot",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_activity",
+          "name": "active_slots",
+          "type": "smallint unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "projectlog_ai_usage",
+      "columns": [
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "recorded_at",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "feature",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "succeeded",
+          "type": "tinyint(1)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "input_tokens",
+          "type": "int unsigned",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "output_tokens",
+          "type": "int unsigned",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "total_tokens",
+          "type": "int unsigned",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "project_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 9
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "node_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 10
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "feedback_id",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 11
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "model",
+          "type": "varchar(100)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 12
+        },
+        {
+          "tableName": "projectlog_ai_usage",
+          "name": "estimated_cost",
+          "type": "decimal(14,8)",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 13
+        }
+      ]
+    },
+    {
+      "name": "projectlog_dashboard_settings",
+      "columns": [
+        {
+          "tableName": "projectlog_dashboard_settings",
+          "name": "id",
+          "type": "tinyint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_dashboard_settings",
+          "name": "layout",
+          "type": "json",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "projectlog_guest_suggestions",
+      "columns": [
+        {
+          "tableName": "projectlog_guest_suggestions",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_guest_suggestions",
+          "name": "message",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_guest_suggestions",
+          "name": "submitted_at",
+          "type": "timestamp",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "projectlog_member_epochs",
+      "columns": [
+        {
+          "tableName": "projectlog_member_epochs",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_member_epochs",
+          "name": "generation",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "projectlog_member_settings",
+      "columns": [
+        {
+          "tableName": "projectlog_member_settings",
+          "name": "id",
+          "type": "tinyint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_member_settings",
+          "name": "member_limit",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        }
+      ]
+    },
+    {
+      "name": "projectlog_sessions",
+      "columns": [
+        {
+          "tableName": "projectlog_sessions",
+          "name": "token_hash",
+          "type": "binary(32)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_sessions",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_sessions",
+          "name": "expires_at",
+          "type": "datetime",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "projectlog_suggestions",
+      "columns": [
+        {
+          "tableName": "projectlog_suggestions",
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_suggestions",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_suggestions",
+          "name": "message",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "projectlog_suggestions",
+          "name": "submitted_at",
+          "type": "timestamp",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        }
+      ]
+    },
+    {
+      "name": "projectlog_updates",
+      "columns": [
+        {
+          "tableName": "projectlog_updates",
+          "name": "id",
+          "type": "char(36)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_updates",
+          "name": "version",
+          "type": "varchar(32)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_updates",
+          "name": "title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "projectlog_updates",
+          "name": "content",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "projectlog_updates",
+          "name": "published_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 5
+        }
+      ]
+    },
+    {
+      "name": "projectlog_user_avatars",
+      "columns": [
+        {
+          "tableName": "projectlog_user_avatars",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_user_avatars",
+          "name": "mime_type",
+          "type": "varchar(32)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_user_avatars",
+          "name": "image_data",
+          "type": "mediumblob",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "projectlog_users",
+      "columns": [
+        {
+          "tableName": "projectlog_users",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_users",
+          "name": "username",
+          "type": "varchar(40)",
+          "nullable": "YES",
+          "columnKey": "UNI",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_users",
+          "name": "password_hash",
+          "type": "varchar(200)",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "projectlog_users",
+          "name": "google_subject",
+          "type": "varchar(255)",
+          "nullable": "YES",
+          "columnKey": "UNI",
+          "position": 4
+        },
+        {
+          "tableName": "projectlog_users",
+          "name": "display_name",
+          "type": "varchar(100)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        }
+      ]
+    },
+    {
+      "name": "projectlog_workspaces",
+      "columns": [
+        {
+          "tableName": "projectlog_workspaces",
+          "name": "uid",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projectlog_workspaces",
+          "name": "legacy_records",
+          "type": "json",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 2
+        },
+        {
+          "tableName": "projectlog_workspaces",
+          "name": "version",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "projectlog_workspaces",
+          "name": "storage_version",
+          "type": "tinyint unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        }
+      ]
+    },
+    {
+      "name": "projects",
+      "columns": [
+        {
+          "tableName": "projects",
+          "name": "id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "projects",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "projects",
+          "name": "title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 3
+        },
+        {
+          "tableName": "projects",
+          "name": "description",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 4
+        },
+        {
+          "tableName": "projects",
+          "name": "technologies",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "projects",
+          "name": "status",
+          "type": "enum('work','complete')",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "projects",
+          "name": "progress",
+          "type": "tinyint unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "projects",
+          "name": "color",
+          "type": "char(7)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 8
+        },
+        {
+          "tableName": "projects",
+          "name": "category",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "projects",
+          "name": "icon",
+          "type": "varchar(20)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        },
+        {
+          "tableName": "projects",
+          "name": "started_at",
+          "type": "date",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 11
+        },
+        {
+          "tableName": "projects",
+          "name": "completed_at",
+          "type": "date",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 12
+        },
+        {
+          "tableName": "projects",
+          "name": "deadline",
+          "type": "date",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 13
+        },
+        {
+          "tableName": "projects",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 14
+        },
+        {
+          "tableName": "projects",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 15
+        },
+        {
+          "tableName": "projects",
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 16
+        }
+      ]
+    },
+    {
+      "name": "todos",
+      "columns": [
+        {
+          "tableName": "todos",
+          "name": "id",
+          "type": "varchar(80)",
+          "nullable": "NO",
+          "columnKey": "PRI",
+          "position": 1
+        },
+        {
+          "tableName": "todos",
+          "name": "user_id",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "MUL",
+          "position": 2
+        },
+        {
+          "tableName": "todos",
+          "name": "project_id",
+          "type": "varchar(80)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 3
+        },
+        {
+          "tableName": "todos",
+          "name": "feedback_id",
+          "type": "char(36)",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 4
+        },
+        {
+          "tableName": "todos",
+          "name": "title",
+          "type": "varchar(160)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 5
+        },
+        {
+          "tableName": "todos",
+          "name": "description",
+          "type": "text",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 6
+        },
+        {
+          "tableName": "todos",
+          "name": "status",
+          "type": "enum('pending','complete')",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 7
+        },
+        {
+          "tableName": "todos",
+          "name": "due_date",
+          "type": "date",
+          "nullable": "YES",
+          "columnKey": "MUL",
+          "position": 8
+        },
+        {
+          "tableName": "todos",
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "nullable": "YES",
+          "columnKey": "",
+          "position": 9
+        },
+        {
+          "tableName": "todos",
+          "name": "sort_order",
+          "type": "int unsigned",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 10
+        },
+        {
+          "tableName": "todos",
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": "NO",
+          "columnKey": "",
+          "position": 11
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "child": "activity_logs",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "activity_logs_ibfk_1"
+    },
+    {
+      "child": "activity_logs",
+      "columnName": "project_id",
+      "parent": "projects",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "activity_logs_ibfk_2"
+    },
+    {
+      "child": "activity_logs",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "activity_logs_ibfk_3"
+    },
+    {
+      "child": "activity_logs",
+      "columnName": "todo_id",
+      "parent": "todos",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "fk_activity_todo"
+    },
+    {
+      "child": "alerts",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "alerts_ibfk_1"
+    },
+    {
+      "child": "alerts",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "alerts_ibfk_2"
+    },
+    {
+      "child": "alerts",
+      "columnName": "feedback_id",
+      "parent": "feedbacks",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "alerts_ibfk_3"
+    },
+    {
+      "child": "feedback_actions",
+      "columnName": "feedback_id",
+      "parent": "feedbacks",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "feedback_actions_ibfk_1"
+    },
+    {
+      "child": "feedback_actions",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "feedback_actions_ibfk_2"
+    },
+    {
+      "child": "feedbacks",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "feedbacks_ibfk_1"
+    },
+    {
+      "child": "feedbacks",
+      "columnName": "regenerated_from",
+      "parent": "feedbacks",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "feedbacks_ibfk_2"
+    },
+    {
+      "child": "feedbacks",
+      "columnName": "next_node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "feedbacks_ibfk_3"
+    },
+    {
+      "child": "node_files",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "node_files_ibfk_1"
+    },
+    {
+      "child": "node_files",
+      "columnName": "revision_id",
+      "parent": "node_revisions",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "node_files_ibfk_2"
+    },
+    {
+      "child": "node_revisions",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "node_revisions_ibfk_1"
+    },
+    {
+      "child": "nodes",
+      "columnName": "project_id",
+      "parent": "projects",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "nodes_ibfk_1"
+    },
+    {
+      "child": "nodes",
+      "columnName": "parent_node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "nodes_ibfk_2"
+    },
+    {
+      "child": "portfolio_analyses",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_analyses_ibfk_1"
+    },
+    {
+      "child": "portfolio_analyses",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_analyses_ibfk_2"
+    },
+    {
+      "child": "portfolio_categories",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_categories_ibfk_1"
+    },
+    {
+      "child": "portfolio_contacts",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_contacts_ibfk_1"
+    },
+    {
+      "child": "portfolio_covers",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_covers_ibfk_1"
+    },
+    {
+      "child": "portfolio_files",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_files_ibfk_1"
+    },
+    {
+      "child": "portfolio_links",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_links_ibfk_1"
+    },
+    {
+      "child": "portfolio_materials",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_materials_ibfk_1"
+    },
+    {
+      "child": "portfolio_pages",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_pages_ibfk_1"
+    },
+    {
+      "child": "portfolio_technologies",
+      "columnName": "portfolio_id",
+      "parent": "portfolios",
+      "parentColumn": "id",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolio_technologies_ibfk_1"
+    },
+    {
+      "child": "portfolios",
+      "columnName": "project_id",
+      "parent": "projects",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "fk_portfolio_project"
+    },
+    {
+      "child": "portfolios",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "portfolios_ibfk_1"
+    },
+    {
+      "child": "projectlog_activity",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projectlog_activity_ibfk_1"
+    },
+    {
+      "child": "projectlog_ai_usage",
+      "columnName": "feedback_id",
+      "parent": "feedbacks",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "fk_ai_usage_feedback_id"
+    },
+    {
+      "child": "projectlog_ai_usage",
+      "columnName": "node_id",
+      "parent": "nodes",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "fk_ai_usage_node_id"
+    },
+    {
+      "child": "projectlog_ai_usage",
+      "columnName": "project_id",
+      "parent": "projects",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "fk_ai_usage_project_id"
+    },
+    {
+      "child": "projectlog_ai_usage",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projectlog_ai_usage_ibfk_1"
+    },
+    {
+      "child": "projectlog_member_epochs",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projectlog_member_epochs_ibfk_1"
+    },
+    {
+      "child": "projectlog_sessions",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projectlog_sessions_ibfk_1"
+    },
+    {
+      "child": "projectlog_suggestions",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "NO ACTION",
+      "constraintName": "projectlog_suggestions_ibfk_1"
+    },
+    {
+      "child": "projectlog_user_avatars",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projectlog_user_avatars_ibfk_1"
+    },
+    {
+      "child": "projectlog_workspaces",
+      "columnName": "uid",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "NO ACTION",
+      "constraintName": "projectlog_workspaces_ibfk_1"
+    },
+    {
+      "child": "projects",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "projects_ibfk_1"
+    },
+    {
+      "child": "todos",
+      "columnName": "user_id",
+      "parent": "projectlog_users",
+      "parentColumn": "uid",
+      "deleteRule": "CASCADE",
+      "constraintName": "todos_ibfk_1"
+    },
+    {
+      "child": "todos",
+      "columnName": "project_id",
+      "parent": "projects",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "todos_ibfk_2"
+    },
+    {
+      "child": "todos",
+      "columnName": "feedback_id",
+      "parent": "feedbacks",
+      "parentColumn": "id",
+      "deleteRule": "SET NULL",
+      "constraintName": "todos_ibfk_3"
+    }
+  ],
+  "indexes": [
+    {
+      "tableName": "activity_logs",
+      "name": "created_at",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "fk_activity_todo",
+      "columnName": "todo_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "project_id",
+      "columnName": "project_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "project_id",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "activity_logs",
+      "name": "user_id",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "alerts",
+      "name": "feedback_id",
+      "columnName": "feedback_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "alerts",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "alerts",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "alerts",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "alerts",
+      "name": "user_id",
+      "columnName": "alert_key",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "alerts",
+      "name": "user_id_2",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "alerts",
+      "name": "user_id_2",
+      "columnName": "is_read",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "alerts",
+      "name": "user_id_2",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 3
+    },
+    {
+      "tableName": "feedback_actions",
+      "name": "feedback_id",
+      "columnName": "feedback_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedback_actions",
+      "name": "feedback_id",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "feedback_actions",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedback_actions",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "feedback_actions",
+      "name": "result",
+      "columnName": "result",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "next_node_id",
+      "columnName": "next_node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "node_id",
+      "columnName": "public_id",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "regenerated_from",
+      "columnName": "regenerated_from",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "selected",
+      "columnName": "selected",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "feedbacks",
+      "name": "selected",
+      "columnName": "node_id",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "node_files",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "node_files",
+      "name": "node_id",
+      "columnName": "stored_name",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "node_files",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "node_files",
+      "name": "revision_id",
+      "columnName": "revision_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "node_files",
+      "name": "stored_name",
+      "columnName": "stored_name",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "node_revisions",
+      "name": "node_id",
+      "columnName": "node_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "node_revisions",
+      "name": "node_id",
+      "columnName": "version",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "node_revisions",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "nodes",
+      "name": "parent_node_id",
+      "columnName": "parent_node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "nodes",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "nodes",
+      "name": "project_id",
+      "columnName": "project_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "nodes",
+      "name": "project_id",
+      "columnName": "work_date",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "nodes",
+      "name": "work_date",
+      "columnName": "work_date",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_analyses",
+      "name": "portfolio_id",
+      "columnName": "portfolio_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_analyses",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_analyses",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_analyses",
+      "name": "user_id",
+      "columnName": "portfolio_id",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "portfolio_analyses",
+      "name": "user_id",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 3
+    },
+    {
+      "tableName": "portfolio_categories",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_categories",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_categories",
+      "name": "user_id",
+      "columnName": "name_key",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "portfolio_contacts",
+      "name": "PRIMARY",
+      "columnName": "portfolio_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_covers",
+      "name": "PRIMARY",
+      "columnName": "portfolio_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_files",
+      "name": "portfolio_id",
+      "columnName": "portfolio_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_files",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_links",
+      "name": "portfolio_id",
+      "columnName": "portfolio_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_links",
+      "name": "portfolio_id",
+      "columnName": "link_type",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "portfolio_links",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_materials",
+      "name": "PRIMARY",
+      "columnName": "portfolio_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_pages",
+      "name": "PRIMARY",
+      "columnName": "user_id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_technologies",
+      "name": "portfolio_id",
+      "columnName": "portfolio_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolio_technologies",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolios",
+      "name": "fk_portfolio_project",
+      "columnName": "project_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolios",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "portfolios",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "portfolios",
+      "name": "user_id",
+      "columnName": "created_at",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "projectlog_activity",
+      "name": "minute_slot",
+      "columnName": "minute_slot",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_activity",
+      "name": "PRIMARY",
+      "columnName": "uid",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_activity",
+      "name": "PRIMARY",
+      "columnName": "minute_slot",
+      "nonUnique": 0,
+      "position": 2
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "fk_ai_usage_feedback_id",
+      "columnName": "feedback_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "fk_ai_usage_node_id",
+      "columnName": "node_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "fk_ai_usage_project_id",
+      "columnName": "project_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "recorded_at",
+      "columnName": "recorded_at",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "uid",
+      "columnName": "uid",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_ai_usage",
+      "name": "uid",
+      "columnName": "recorded_at",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "projectlog_dashboard_settings",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_guest_suggestions",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_member_epochs",
+      "name": "PRIMARY",
+      "columnName": "uid",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_member_settings",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_sessions",
+      "name": "expires_at",
+      "columnName": "expires_at",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_sessions",
+      "name": "PRIMARY",
+      "columnName": "token_hash",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_sessions",
+      "name": "uid",
+      "columnName": "uid",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_suggestions",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_suggestions",
+      "name": "uid",
+      "columnName": "uid",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_updates",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_updates",
+      "name": "published_at",
+      "columnName": "published_at",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_user_avatars",
+      "name": "PRIMARY",
+      "columnName": "uid",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_users",
+      "name": "google_subject",
+      "columnName": "google_subject",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_users",
+      "name": "PRIMARY",
+      "columnName": "uid",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_users",
+      "name": "username",
+      "columnName": "username",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projectlog_workspaces",
+      "name": "PRIMARY",
+      "columnName": "uid",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projects",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "projects",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "projects",
+      "name": "user_id",
+      "columnName": "status",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "todos",
+      "name": "due_date",
+      "columnName": "due_date",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "todos",
+      "name": "feedback_id",
+      "columnName": "feedback_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "todos",
+      "name": "PRIMARY",
+      "columnName": "id",
+      "nonUnique": 0,
+      "position": 1
+    },
+    {
+      "tableName": "todos",
+      "name": "project_id",
+      "columnName": "project_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "todos",
+      "name": "user_id",
+      "columnName": "user_id",
+      "nonUnique": 1,
+      "position": 1
+    },
+    {
+      "tableName": "todos",
+      "name": "user_id",
+      "columnName": "status",
+      "nonUnique": 1,
+      "position": 2
+    },
+    {
+      "tableName": "todos",
+      "name": "user_id",
+      "columnName": "completed_at",
+      "nonUnique": 1,
+      "position": 3
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+<% const work = workStatusFor(node); const issue = errorStatusFor(node);
+const showWork = typeof showWorkStatus === 'undefined' || showWorkStatus;
+const showStatusSymbol = typeof showSymbol === 'undefined' || showSymbol; %>
+<% if (showWork || issue) { %>
+<span class="record-statuses">
+  <% if (showWork) { %><span class="status <%= work %>"><% if (showStatusSymbol) { %><span aria-hidden="true"><%= work === 'complete' ? '✓' : '●' %></span><% } %><%= workStatuses[work] %></span><% } %>
+  <% if (issue) { %><span class="status <%= issue %>"><% if (showStatusSymbol) { %><span aria-hidden="true"><%= issue === 'resolved' ? '✓' : '!' %></span><% } %><%= errorStatuses[issue] %></span><% } %>
+</span>
+<% } %>

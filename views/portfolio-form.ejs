@@ -1,0 +1,123 @@
+<%- include('partials/start') %>
+<header class="page-heading"><h1><%= title %></h1></header>
+<section class="form-panel portfolio-editor">
+  <% if (error) { %><p class="error portfolio-error" role="alert"><%= error %></p><% } %>
+  <form method="post" action="<%= item.id ? '/portfolio/' + item.id + '/edit' : '/portfolio' %>" enctype="multipart/form-data">
+    <% if (item.id) { %><input type="hidden" name="version" value="<%= item.version %>"><% } %>
+    <div class="panel portfolio-editor-card">
+      <label>제목<input name="title" maxlength="160" value="<%= item.title || '' %>"></label>
+      <label>설명<textarea name="description" rows="4" maxlength="4000"><%= item.description || '' %></textarea></label>
+      <label>기술 스택<input name="technologies" maxlength="1700" value="<%= item.technologies.join(', ') %>" placeholder="예. Node.js, Express, MySQL"></label>
+      <div class="portfolio-sources portfolio-dates" data-portfolio-dates>
+        <input name="dateSettings" type="hidden" value="checkbox">
+        <label class="check-line">
+          <input name="datesEnabled" type="checkbox" value="1" aria-controls="portfolio-date-fields" <%= datesEnabled ? 'checked' : '' %>>
+          날짜 설정
+        </label>
+        <fieldset id="portfolio-date-fields" class="portfolio-date-fields" <%= datesEnabled ? '' : 'hidden disabled' %>>
+          <div class="portfolio-form-grid">
+            <% for (const [key, label, year] of [['startDate', '시작 연도', startYear], ['endDate', '완료 연도', endYear]]) { %>
+              <div class="portfolio-year-picker">
+                <label for="portfolio-<%= key %>"><%= label %></label>
+                <div class="portfolio-year-wheel" data-year-wheel>
+                  <div class="portfolio-year-window" aria-hidden="true" hidden>
+                    <div class="portfolio-year-track" data-year-track>
+                      <% for (let offset = -3; offset <= 3; offset++) { %>
+                        <span data-year-offset="<%= offset %>"></span>
+                      <% } %>
+                    </div>
+                  </div>
+                  <input id="portfolio-<%= key %>" type="text" inputmode="numeric" pattern="[1-8][0-9]{3}" maxlength="4" name="<%= key %>" value="<%= year %>">
+                </div>
+              </div>
+            <% } %>
+          </div>
+          <p class="muted portfolio-year-hint" data-year-hint hidden>위아래로 끌거나 가운데를 눌러 연도를 입력하세요.</p>
+        </fieldset>
+      </div>
+    </div>
+    <div class="panel portfolio-editor-card">
+      <fieldset class="portfolio-sources">
+        <legend>작업물 등록</legend>
+        <label>연결할 프로젝트
+          <select name="projectId">
+            <option value="">선택 안 함</option>
+            <% for (const project of projects) { %><option value="<%= project.id %>" <%= item.projectId === project.id ? 'selected' : '' %>><%= project.name %></option><% } %>
+          </select>
+          <span class="muted">비워 둔 제목, 설명과 기술은 연결 프로젝트에서 가져와요.</span>
+        </label>
+        <%- include('partials/portfolio-resource-buttons', { addedLink, github: item.github || '' }) %>
+      </fieldset>
+      <% if (item.files.length) { %>
+        <fieldset class="portfolio-sources">
+          <legend>자료</legend>
+          <p class="muted" id="portfolio-files-help">자료를 끌어 순서를 바꾸고, 이미지를 눌러 대표로 선택하세요.</p>
+          <div class="portfolio-edit-files" data-portfolio-edit-files aria-describedby="portfolio-files-help">
+            <% for (const [index, file] of item.files.entries()) { %>
+              <article class="portfolio-file-edit" data-edit-file="<%= file.id %>" data-sort-item>
+                <input type="hidden" name="order_<%= file.id %>" value="<%= index + 1 %>">
+                <input type="checkbox" name="removeFiles" value="<%= file.id %>" hidden>
+                <button class="portfolio-file-remove" type="button" aria-label="<%= file.name %> 삭제" title="삭제" data-remove-file>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+                </button>
+                <% if (file.type === 'image') { %>
+                  <input type="radio" name="thumbnail" value="<%= file.id %>" <%= file.thumbnail ? 'checked' : '' %> hidden>
+                  <button class="portfolio-file-preview" type="button" data-select-thumbnail aria-label="<%= file.name %> 대표 이미지로 선택" aria-pressed="<%= Boolean(file.thumbnail) %>" aria-describedby="portfolio-files-help">
+                    <img src="/portfolio/<%= item.id %>/files/<%= file.id %>" alt="" loading="lazy" draggable="false">
+                  </button>
+                <% } else { %>
+                  <div class="portfolio-file-preview" tabindex="0" aria-label="<%= file.name %>" aria-describedby="portfolio-files-help">
+                    <%- include('partials/project-icon', { icon: 'file' }) %>
+                  </div>
+                <% } %>
+                <div class="portfolio-file-details">
+                  <strong><%= file.name %></strong>
+                  <% if (file.type === 'image') { %>
+                    <label>이미지 설명<input name="caption_<%= file.id %>" value="<%= file.caption %>" maxlength="200"></label>
+                  <% } %>
+                </div>
+              </article>
+            <% } %>
+          </div>
+          <p class="muted" data-edit-files-status role="status"></p>
+        </fieldset>
+      <% } %>
+    </div>
+    <div class="panel portfolio-editor-card">
+      <%- include('partials/portfolio-cover-editor', { item, cover }) %>
+    </div>
+    <div class="panel portfolio-editor-card">
+      <fieldset class="portfolio-sources portfolio-related-links">
+        <legend>관련 링크</legend>
+        <% for (const [key, label] of Object.entries(linkLabels)) { %>
+          <label><%= label %><input type="url" name="<%= key %>" maxlength="255" placeholder="https://" value="<%= item.links?.[key] || '' %>"></label>
+        <% } %>
+      </fieldset>
+      <fieldset class="portfolio-sources portfolio-contact-fields">
+        <legend>추가 정보</legend>
+        <label>이메일<input type="email" name="email" maxlength="254" value="<%= item.contact?.email || '' %>" placeholder="name@example.com"></label>
+        <label>추가 정보<textarea name="contactDetails" rows="3" maxlength="2000" placeholder="연락 방법이나 함께 표시할 정보를 입력하세요."><%= item.contact?.details || '' %></textarea></label>
+      </fieldset>
+      <label>공개 범위
+        <select name="visibility" aria-describedby="portfolio-visibility-info">
+          <option value="private" <%= item.isPublic ? '' : 'selected' %>>비공개</option>
+          <option value="public" <%= item.isPublic ? 'selected' : '' %>>공개</option>
+        </select>
+      </label>
+      <p class="muted" id="portfolio-visibility-info">공개로 저장하면 상세 화면에 공유 링크가 생겨요. 링크를 받은 사람은 로그인 없이 직접 작성한 정보, 이미지, 관련 링크를 볼 수 있어요.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="<%= item.id ? '/portfolio/' + item.id : '/portfolio' %>">취소</a>
+      <button class="button primary">저장</button>
+    </div>
+  </form>
+  <% if (item.id) { %>
+    <form class="portfolio-editor-delete" method="post" action="/portfolio/<%= item.id %>/delete" data-portfolio-delete>
+      <button class="button" type="submit">포트폴리오 삭제</button>
+    </form>
+  <% } %>
+</section>
+<script src="/portfolio-years.js" defer></script>
+<script src="/portfolio-files.js" defer></script>
+<script src="/portfolio-cover.js" defer></script>
+<%- include('partials/end') %>

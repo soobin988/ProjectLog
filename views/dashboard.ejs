@@ -1,0 +1,82 @@
+<%- include('partials/start') %>
+<header class="page-heading dash-heading">
+  <div class="dashboard-heading">
+    <h1>대시보드</h1>
+    <button class="button" type="button" id="dashboard-edit" aria-label="대시보드 수정" title="대시보드 수정" aria-controls="widget-picker" aria-expanded="false" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z"/></svg>
+    </button>
+  </div>
+  <time class="date-chip" datetime="<%= today %>"><i class="calendar-icon" aria-hidden="true"></i><%= todayLabel %></time>
+</header>
+<p class="layout-status" role="status"></p>
+<div class="dashboard-workspace">
+<div class="dashboard-grid" data-dashboard data-default-layout="<%= JSON.stringify(dashboardDefault) %>">
+  <article class="panel stat stat-featured" data-card="active" data-slot="1" data-label="진행 중 프로젝트">
+    <span class="tile" aria-hidden="true"><%- include('partials/sidebar-icon', { icon: 'folder' }) %></span>
+    <span>진행 중 프로젝트</span><strong><%= activeProjectCount %></strong>
+  </article>
+  <a class="panel stat stat-link" href="/notifications?tab=issues" data-card="issues" data-slot="2" data-label="남은 문제 수">
+    <span class="tile" aria-hidden="true">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 4.6a2 2 0 0 1 3.4 0l7.8 13.2a2 2 0 0 1-1.7 3H4.2a2 2 0 0 1-1.7-3z"/>
+        <path d="M12 9v4.5m0 3.5h.01"/>
+      </svg>
+    </span>
+    <span>남은 문제 수</span><strong><%= remainingIssueCount %></strong>
+  </a>
+  <section class="panel today-panel" data-card="today" data-slot="4" data-label="작업 흐름도">
+    <header class="panel-head"><h2>작업 흐름도</h2></header>
+    <div class="dashboard-flow-scroll" role="region" aria-label="날짜별 작업 기록" tabindex="0">
+      <%- include('partials/dashboard-day', { date: today, entries: todayEntries }) %>
+      <% for (const [date, entries] of Object.entries(pastEntries)) { %>
+        <%- include('partials/dashboard-day', { date, entries }) %>
+      <% } %>
+    </div>
+  </section>
+  <%- include('partials/calendar') %>
+  <section class="panel overview-panel" data-card="overview" data-slot="6" data-label="프로젝트 진행률">
+    <header class="panel-head"><h2>프로젝트 진행률</h2><a class="text-link" href="/projects">전체 보기 ↗</a></header>
+    <ul class="overview-list">
+      <% for (const project of progressProjects) { %>
+        <% const nextTodo = nextTodos.get(project.id); %>
+        <li style="--project-color:<%= project.color %>">
+          <a class="overview-project" href="/projects/<%= project.id %>"><i class="dot"></i><span><%= project.name %></span><strong><%= project.progress %>%</strong></a>
+          <progress value="<%= project.progress %>" max="100" aria-label="<%= project.name %> 진행률"></progress>
+          <% if (nextTodo) { %>
+            <a class="overview-next" href="/todos#todo-<%= nextTodo.id %>" title="<%= nextTodo.title %>">
+              <span class="overview-next-label">다음 할 일</span><span class="overview-next-title"><%= nextTodo.title %></span>
+              <% if (nextTodo.dueDate) { %><time datetime="<%= nextTodo.dueDate %>"><%= shortDate(nextTodo.dueDate) %></time><% } %>
+            </a>
+          <% } %>
+        </li>
+      <% } %>
+    </ul>
+    <% if (!progressProjects.length) { %><p class="empty">진행 중인 프로젝트가 없습니다.</p><% } %>
+  </section>
+  <section class="panel recent-panel" data-card="recent" data-slot="5" data-label="최근 작업 기록" hidden>
+    <header class="panel-head"><h2>최근 작업 기록</h2></header>
+    <% for (const node of recent) { const project = projectFor(node.projectId); %>
+      <a class="recent-row <%= node.ai?.title ? 'ai-tone' : '' %>" style="--project-color:<%= project.color %>" href="/projects/<%= project.id %>#node-<%= node.id %>"><i class="dot"></i><span class="recent-title"><%= node.title %></span><span class="recent-project"><%= project.name %></span><%- include('partials/status', { node, showSymbol: false }) %></a>
+    <% } %>
+    <% if (!recent.length) { %><p class="empty">아직 작업 기록이 없습니다.</p><% } %>
+  </section>
+  <p class="dashboard-drop-empty muted" data-widget-empty hidden>위젯을 여기로 끌어다 놓으세요.</p>
+</div>
+<aside class="panel widget-picker" aria-labelledby="widget-picker-title" id="widget-picker" hidden>
+  <details class="widget-picker-options" open>
+    <summary id="widget-picker-title">위젯 목록</summary>
+    <p class="muted">원하는 위젯을 대시보드로 끌어 놓으세요.</p>
+    <div class="widget-picker-list" data-widget-list></div>
+    <p class="muted" data-widget-picker-empty hidden>모든 위젯을 배치했어요.</p>
+  </details>
+  <div class="dashboard-layout-actions">
+    <button class="button" type="button" data-layout-reset>기본 배치</button>
+    <% if (typeof account !== 'undefined' && account.developer) { %>
+      <button class="button" type="button" data-layout-publish>공통 기본 배치로 저장</button>
+    <% } %>
+    <button class="button" type="button" data-layout-cancel>취소</button>
+    <button class="button primary" type="button" data-layout-save>저장</button>
+  </div>
+</aside>
+</div>
+<%- include('partials/end') %>

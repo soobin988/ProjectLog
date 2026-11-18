@@ -1,0 +1,17 @@
+<%- include('partials/start', { breadcrumbLinks: [{ label: '프로젝트', href: '/projects' },
+  { label: project.name, href: projectPath }] }) %>
+<header class="page-heading"><h1><%= title %></h1></header>
+<section class="panel form-panel project-settings-panel" aria-label="프로젝트 설정">
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form method="post" action="<%= projectPath %>/edit">
+    <%- include('partials/project-fields') %>
+    <div class="actions">
+      <a class="button" href="<%= projectPath %>">취소</a>
+      <button class="button primary">저장</button>
+    </div>
+  </form>
+  <form class="project-settings-delete" method="post" action="<%= projectPath %>/delete" data-project-delete>
+    <button class="button" type="submit">프로젝트 삭제</button>
+  </form>
+</section>
+<%- include('partials/end') %>

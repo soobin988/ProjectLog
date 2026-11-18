@@ -1,0 +1,5 @@
+<select name="category" aria-label="카테고리" required>
+  <% for (const [key, label] of Object.entries(categories)) { %>
+    <option value="<%= key %>" <%= key === selectedCategory ? 'selected' : '' %>><%= label %></option>
+  <% } %>
+</select>

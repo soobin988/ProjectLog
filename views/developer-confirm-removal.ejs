@@ -1,0 +1,25 @@
+<%- include('partials/start', { breadcrumbLinks: [
+  { label: '개발자 전용', href: '/developer?period=' + period },
+  { label: member.name, href: '/developer/members/' + member.uid + '?period=' + period }
+] }) %>
+<header class="page-heading"><h1>정말 삭제하시겠습니까?</h1></header>
+<section class="panel form-panel developer-confirm">
+  <h2><%= deleteAccount ? '아이디 삭제' : '유저 데이터 삭제' %></h2>
+  <p><strong><%= member.name %></strong> · UID <%= member.uid %></p>
+  <% if (deleteAccount) { %><p>아이디와 함께 아래 데이터를 삭제하고 모든 로그인 세션을 종료해요.</p>
+  <% } else { %><p>아래 데이터를 삭제하고 모든 로그인 세션을 종료해요. 이 회원은 같은 계정으로 다시 로그인할 수 있어요.</p><% } %>
+  <ul>
+    <li>프로젝트, 작업 노드, 할 일, 피드백, 첨부 자료</li>
+    <li>Portfolio, 카테고리, 분석 기록</li>
+    <li>개발자 문의, 활동 시간, AI 사용량 기록</li>
+  </ul>
+  <p class="error">삭제한 데이터는 복구할 수 없어요.</p>
+  <form method="post" action="/developer/members/<%= member.uid %>/<%= operation %>?period=<%= period %>">
+    <input type="hidden" name="confirmed" value="yes">
+    <div class="actions">
+      <a class="button" href="/developer/members/<%= member.uid %>?period=<%= period %>">취소</a>
+      <button class="button developer-delete" type="submit"><%= deleteAccount ? '아이디 삭제' : '유저 데이터 삭제' %></button>
+    </div>
+  </form>
+</section>
+<%- include('partials/end') %>

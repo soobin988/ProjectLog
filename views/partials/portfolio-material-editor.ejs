@@ -1,0 +1,52 @@
+<button class="button portfolio-action-icon" type="button" aria-label="자료 추가 및 분류" title="자료 추가 및 분류"
+  aria-haspopup="dialog" aria-controls="portfolio-material-editor" data-open-portfolio-materials>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M13 21H5V3h8l5 5v4M13 3v5h5m0 7v6m-3-3h6"/>
+  </svg>
+</button>
+<dialog class="panel form-panel portfolio-material-editor" id="portfolio-material-editor"
+  aria-labelledby="portfolio-material-title"<% if (materialError || reopenMaterialEditor) { %> data-reopen<% } %>>
+  <header class="row-heading">
+    <h2 id="portfolio-material-title">자료 추가 및 분류</h2>
+    <form method="dialog"><button class="button" type="submit">닫기</button></form>
+  </header>
+  <% if (materialError) { %><p class="error" role="alert"><%= materialError %></p><% } %>
+  <form method="post" action="<%= url %>/materials<%= materialCategory !== '*' ? '?materialCategory=' + materialCategory : '' %>" enctype="multipart/form-data">
+    <input type="hidden" name="version" value="<%= item.version %>">
+    <input type="hidden" name="materialChanges" value="{}">
+    <input type="hidden" name="categoryId" value="<%= materialCategory === '*' ? '' : materialCategory %>">
+    <section class="portfolio-material-board" data-material-board data-view-folder="<%= materialCategory %>" aria-label="기존 자료">
+      <div class="portfolio-material-folders" role="group" aria-label="카테고리 폴더">
+        <% for (const [id, name] of [['*', '전체'], ['', '미분류'], ...materials.categories.map(({ id, name }) => [id, name])]) { %>
+          <button class="button portfolio-material-folder" type="button" data-material-folder="<%= id %>" aria-pressed="<%= id === materialCategory %>">
+            <%- include('project-icon', { icon: 'folder' }) %>
+            <span><%= name %></span><small data-material-count></small>
+          </button>
+        <% } %>
+      </div>
+      <p class="muted" data-material-status role="status">자료를 선택해 폴더로 끌어 놓으세요.</p>
+      <div class="portfolio-material-tiles">
+        <% for (const entry of materialEntries) { %>
+          <div class="portfolio-material-tile" data-material-id="<%= entry.id %>" data-category-id="<%= entry.categoryId %>" data-kind="<%= entry.kind %>">
+            <button class="portfolio-material-preview" type="button" aria-label="<%= entry.title %>" aria-pressed="false" data-material-select draggable="true">
+              <% if (entry.kind === 'image') { %>
+                <img src="<%= url %>/files/<%= entry.id %>" alt="" draggable="false">
+              <% } else if (entry.kind === 'github') { %>
+                <%- include('artifact-icon', { icon: 'github' }) %>
+              <% } else if (entry.kind === 'file') { %>
+                <%- include('project-icon', { icon: 'file' }) %>
+              <% } else { %>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m10 13 4-4m-6 8-1 1a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0m4-2 1-1a3 3 0 0 1 4 4l-5 5a3 3 0 0 1-4 0"/></svg>
+              <% } %>
+            </button>
+            <button class="portfolio-material-name" type="button" data-material-name aria-label="<%= entry.title %> 이름 수정" title="이름 수정"><%= entry.title %></button>
+            <input type="text" value="<%= entry.title %>" maxlength="<%= ['image', 'file'].includes(entry.kind) ? 200 : 100 %>" aria-label="자료 이름" data-material-rename hidden>
+          </div>
+        <% } %>
+      </div>
+      <p class="muted" data-material-empty<% if (materialEntries.length) { %> hidden<% } %>>이 폴더에 등록된 자료가 없어요.</p>
+    </section>
+    <%- include('portfolio-resource-buttons', { addedLink, github: null }) %>
+    <div class="actions"><button class="button primary" type="submit">저장</button></div>
+  </form>
+</dialog>

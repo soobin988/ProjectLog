@@ -1,0 +1,18 @@
+<%- include('partials/start', { page: '', breadcrumbLinks: [{ label: '프로젝트 캘린더', href: back }] }) %>
+<header class="page-heading">
+  <div>
+    <h1><%= title %></h1>
+    <p><time datetime="<%= draft.dueDate %>"><%= draft.dueDate %></time></p>
+  </div>
+</header>
+<section class="panel form-panel todo-panel">
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form method="post">
+    <%- include('partials/calendar-todo-fields', { draft }) %>
+    <div class="actions">
+      <a class="button" href="<%= back %>">취소</a>
+      <button class="button primary">추가</button>
+    </div>
+  </form>
+</section>
+<%- include('partials/end') %>

@@ -1,0 +1,38 @@
+<% const initial = Math.max(files.findIndex(file => file.type.startsWith('image/')), 0); %>
+<section class="panel feedback-attachments" data-feedback-attachments aria-label="작업물 미리보기">
+  <h2>첨부 자료</h2>
+  <% if (files.length > 1) { %>
+    <div class="feedback-attachment-options" role="group" aria-label="첨부 파일 선택">
+      <% for (const [index, file] of files.entries()) { %>
+        <button class="button" type="button" data-attachment-option="<%= index %>" aria-pressed="<%= index === initial %>"><%= file.name %></button>
+      <% } %>
+    </div>
+  <% } %>
+  <% for (const [index, file] of files.entries()) {
+    const src = nodeDetailUrl(node) + '/files/' + file.id;
+    const isImage = file.type.startsWith('image/');
+  %>
+    <figure class="feedback-attachment-item" data-attachment-item="<%= index %>" <%= index === initial ? '' : 'hidden' %>>
+      <% if (isImage) { %>
+        <div class="feedback-image-view" data-image-view>
+          <div class="feedback-image-tools" role="group" aria-label="이미지 크기" hidden>
+            <button class="button" type="button" data-image-zoom="out" aria-label="이미지 축소">−</button>
+            <output data-image-scale aria-live="polite">100%</output>
+            <button class="button" type="button" data-image-zoom="in" aria-label="이미지 확대">+</button>
+            <button class="button" type="button" data-image-zoom="reset">화면 맞춤</button>
+          </div>
+          <div class="feedback-image-viewport" data-image-viewport role="region" aria-label="<%= file.name %> 미리보기" tabindex="0">
+            <div class="feedback-image-stage"><img src="<%= src %>" alt="<%= file.name %>" <%= index === initial ? '' : 'loading=lazy' %>></div>
+          </div>
+        </div>
+      <% } %>
+      <figcaption>
+        <span><%= file.name %></span>
+        <div class="feedback-attachment-links">
+          <% if (isImage) { %><a class="text-link" href="<%= src %>" target="_blank" rel="noopener">원본 열기</a><% } %>
+          <a class="text-link" href="<%= src %>?download=1">다운로드</a>
+        </div>
+      </figcaption>
+    </figure>
+  <% } %>
+</section>

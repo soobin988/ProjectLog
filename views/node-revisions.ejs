@@ -1,0 +1,18 @@
+<%- include('partials/start', { breadcrumbLinks: [{ label: project.name, href: '/projects/' + project.id }, { label: node.title, href: nodeDetailUrl(node) }] }) %>
+<header class="page-heading"><h1>수정 이력</h1></header>
+<section class="panel form-panel node-revision-history">
+  <% if (!node.revisions?.length) { %><p class="muted">저장된 수정 이력이 없어요.</p><% } %>
+  <% for (const revision of [...(node.revisions || [])].reverse()) { %>
+    <details class="response">
+      <summary>Revision <%= revision.version %> · <time datetime="<%= revision.createdAt %>"><%= new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(revision.createdAt)) %></time></summary>
+      <h2><%= revision.title %></h2><p class="prewrap"><%= revision.note %></p>
+      <% if (revision.code) { %><pre><code><%= revision.code %></code></pre><% } %>
+      <% if (revision.github) { %><p><a class="text-link" href="<%= revision.github %>" target="_blank" rel="noopener noreferrer">GitHub ↗</a></p><% } %>
+      <% if (revision.link) { %><p><a class="text-link" href="<%= revision.link %>" target="_blank" rel="noopener noreferrer">관련 링크 ↗</a></p><% } %>
+      <% if (revision.files?.length) { %><ul>
+        <% for (const file of revision.files) { %><li><a class="text-link" href="<%= nodeDetailUrl(node) %>/files/<%= file.id %>?download=1"><%= file.name %> ↓</a></li><% } %>
+      </ul><% } %>
+    </details>
+  <% } %>
+</section>
+<%- include('partials/end') %>

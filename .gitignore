@@ -1,0 +1,54 @@
+# Dependencies and local logs
+node_modules/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment files and credentials
+.env
+.env.*
+*.env
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+client_secret*.json
+credentials.json
+
+# Real project data, attachments and backups
+/project-log-data.json
+/project-log-data.json.*
+/project-log-data/
+/uploads/*
+!/uploads/.gitkeep
+/backup/
+/backups/
+*.suggestions.jsonl
+*.uploads/
+*.portfolio.json
+*.portfolio.json.tmp
+*.updates.json
+*.updates.json.tmp
+*-backup.sql
+*.sql.gz
+*.dump
+*.sql.bak
+*.bak
+*.tmp
+*.suggestions.jsonl.*
+*.portfolio.json.*
+*.updates.json.*
+
+# Local tooling and OS metadata
+/.codex/
+/.tools/
+/.cache/
+/.local/
+/coverage/
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

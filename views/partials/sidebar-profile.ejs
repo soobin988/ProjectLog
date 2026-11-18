@@ -1,0 +1,18 @@
+<div class="sidebar-profile">
+  <% if (typeof account !== 'undefined') { %>
+    <form method="post" action="/account/avatar" enctype="multipart/form-data" data-avatar-form>
+      <button class="sidebar-avatar" type="button" aria-label="프로필 사진 수정" data-avatar-button>
+        <img src="<%= account.hasAvatar ? '/account/avatar' : '/default-avatar.svg' %>" alt="" width="72" height="72" data-avatar-image>
+        <span class="sidebar-avatar-edit" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11z"/></svg>
+        </span>
+      </button>
+      <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" hidden>
+      <p class="sidebar-profile-status" role="status" data-avatar-status></p>
+    </form>
+    <strong class="sidebar-profile-name"><%= account.name %></strong>
+  <% } else { %>
+    <div class="sidebar-avatar"><img src="/default-avatar.svg" alt="" width="72" height="72"></div>
+    <strong class="sidebar-profile-name">로컬 작업공간</strong>
+  <% } %>
+</div>

@@ -1,0 +1,20 @@
+<label>프로젝트 이름<input name="name" value="<%= draft.name || '' %>" required maxlength="100"></label>
+<label>기술 스택 또는 분야<input name="tech" value="<%= draft.tech || '' %>" maxlength="120"></label>
+<label>프로젝트 설명<textarea name="summary" rows="3" maxlength="1000"><%= draft.summary || '' %></textarea></label>
+<div class="fields">
+  <label>카테고리<%- include('project-category') %></label>
+  <label>마감일 (선택)<input type="date" name="deadline" value="<%= draft.deadline || '' %>"></label>
+</div>
+<fieldset class="project-icon-picker">
+  <legend>프로젝트 아이콘</legend>
+  <div class="project-icon-options">
+    <% const currentIcon = projectIconFor({ ...draft, category: selectedCategory }); %>
+    <% for (const [icon, label] of Object.entries(projectIcons)) { %>
+      <label>
+        <input type="radio" name="icon" value="<%= icon %>" <%= currentIcon === icon ? 'checked' : '' %>>
+        <span><%- include('project-icon', { icon }) %><%= label %></span>
+      </label>
+    <% } %>
+  </div>
+</fieldset>
+<%- include('color', { color: validColor(draft.color) ? draft.color : defaultColor }) %>

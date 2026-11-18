@@ -1,0 +1,37 @@
+<dialog class="panel settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+  <header class="row-heading">
+    <h2 id="settings-title">환경설정</h2>
+    <form method="dialog"><button class="button" autofocus>닫기</button></form>
+  </header>
+  <div class="settings-tabs" role="tablist" aria-label="환경설정">
+    <button type="button" role="tab" id="settings-user-tab" aria-controls="settings-user" aria-selected="true" data-settings-tab="user">사용자</button>
+    <button type="button" role="tab" id="settings-updates-tab" aria-controls="settings-updates" aria-selected="false" tabindex="-1" data-settings-tab="updates">업데이트 내역</button>
+  </div>
+  <div id="settings-user" role="tabpanel" aria-labelledby="settings-user-tab">
+    <section aria-labelledby="settings-account-title">
+    <h3 id="settings-account-title">계정 정보</h3>
+    <% if (typeof account !== 'undefined') { %>
+      <dl class="settings-account">
+        <dt>계정 이름</dt><dd><%= account.name %></dd>
+        <dt>회원 UID</dt><dd class="settings-uid"><%= account.uid %></dd>
+      </dl>
+      <form class="settings-logout" method="post" action="/logout">
+        <button class="button" type="submit">로그아웃</button>
+      </form>
+    <% } else { %>
+      <p class="muted">로그인한 계정이 없어요.</p>
+    <% } %>
+    </section>
+    <fieldset class="settings-theme">
+    <legend>화면 모드</legend>
+    <label><input type="radio" name="theme" value="light" checked> 라이트 모드</label>
+    <label><input type="radio" name="theme" value="dark"> 다크 모드</label>
+    </fieldset>
+  </div>
+  <div id="settings-updates" role="tabpanel" aria-labelledby="settings-updates-tab" hidden>
+    <p class="settings-version">현재 버전 <strong>v<%= currentVersion %></strong></p>
+    <p class="muted" role="status" data-updates-status></p>
+    <div class="settings-updates-list" data-updates-list></div>
+    <button type="button" class="button" data-retry-updates hidden>다시 불러오기</button>
+  </div>
+</dialog>

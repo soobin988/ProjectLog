@@ -1,0 +1,34 @@
+<%
+  const attachments = records.flatMap(node => (node.revision?.files || []).map(file => ({
+    file,
+    url: nodeDetailUrl(node) + '/files/' + file.id
+  })));
+  const images = attachments.filter(({ file }) => file.type.startsWith('image/'));
+  const files = attachments.filter(({ file }) => !file.type.startsWith('image/'));
+%>
+<section class="panel project-materials" aria-labelledby="project-materials-title">
+  <h2 id="project-materials-title">자료 모아보기</h2>
+  <% if (images.length) { %>
+    <div class="project-materials-group">
+      <h3 id="project-materials-images">이미지</h3>
+      <div class="project-materials-gallery" role="region" aria-labelledby="project-materials-images" tabindex="0">
+        <% for (const { file, url } of images) { %>
+          <a href="<%= url %>" target="_blank" rel="noopener" aria-label="<%= file.name %> 원본 보기">
+            <img src="<%= url %>" alt="<%= file.name %>" loading="lazy">
+          </a>
+        <% } %>
+      </div>
+    </div>
+  <% } %>
+  <% if (files.length) { %>
+    <div class="project-materials-group">
+      <h3>파일</h3>
+      <ul class="project-materials-files">
+        <% for (const { file, url } of files) { %>
+          <li><a href="<%= url %>?download=1" download><span><%= file.name %></span><span>다운로드</span></a></li>
+        <% } %>
+      </ul>
+    </div>
+  <% } %>
+  <% if (!attachments.length) { %><p class="muted">아직 등록된 이미지나 파일이 없어요.</p><% } %>
+</section>

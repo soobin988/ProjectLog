@@ -1,0 +1,10 @@
+<section class="panel form-panel portfolio-section portfolio-history" id="portfolio-analysis" aria-label="<%= heading %>">
+  <h2><%= heading %></h2>
+  <% if (!recent.length) { %><p class="muted">저장된 분석이 없어요.</p><% } %>
+  <% for (const [index, result] of recent.entries()) { %>
+    <details class="portfolio-analysis-result" <%= index === 0 ? 'open' : '' %>>
+      <summary><time datetime="<%= new Date(result.createdAt).toISOString() %>"><%= new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(result.createdAt)) %></time></summary>
+      <div class="feedback-markdown portfolio-analysis-text"><%- feedbackMarkdown(result.text) %></div>
+    </details>
+  <% } %>
+</section>

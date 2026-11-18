@@ -1,0 +1,29 @@
+<dialog class="panel form-panel portfolio-category-editor" id="portfolio-category-editor" aria-labelledby="portfolio-category-title"<%= categoryError || reopenCategoryEditor ? ' data-reopen' : '' %>>
+  <header class="row-heading">
+    <h2 id="portfolio-category-title">카테고리 관리</h2>
+    <form method="dialog"><button class="button">닫기</button></form>
+  </header>
+  <% if (categoryError) { %><p class="error" role="alert"><%= categoryError %></p><% } %>
+  <form method="post" action="<%= url %>/categories<%= materialCategory !== '*' ? '?materialCategory=' + materialCategory : '' %>" data-category-manager>
+    <input type="hidden" name="version" value="<%= item.version %>">
+    <input type="hidden" name="categoryOrder" value="<%= JSON.stringify(materials.categories.map(category => category.id)) %>">
+    <div class="portfolio-category-fixed"><span>전체</span><span>미분류</span></div>
+    <ul class="portfolio-category-list" data-category-list>
+      <% for (const { id, name } of materials.categories) { %>
+        <li class="portfolio-category-row" data-category-id="<%= id %>" data-sort-item tabindex="0">
+          <strong><%= name %></strong>
+          <div class="portfolio-category-actions">
+            <button class="button" type="submit" name="deleteCategory" value="<%= id %>" data-delete-category="<%= name %>">삭제</button>
+          </div>
+        </li>
+      <% } %>
+    </ul>
+    <p class="muted">카테고리를 삭제하면 담긴 자료는 미분류로 이동해요.</p>
+    <div class="portfolio-material-category-add">
+      <label>새 카테고리 이름<input name="newCategory" maxlength="40"></label>
+      <button class="button" name="addCategory" value="1">추가</button>
+    </div>
+    <p class="muted" role="status" data-category-save-status></p>
+    <button class="button" type="button" data-category-save-retry hidden>다시 저장</button>
+  </form>
+</dialog>

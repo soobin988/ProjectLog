@@ -1,0 +1,68 @@
+<% const calendarUrl = (mode, date) => '/?view=' + mode + '&date=' + date + '#calendar';
+const weekDays = calendar.weeks[0].days;
+const monthLabel = date => Number(date.slice(0, 4)) + '년 ' + Number(date.slice(5, 7)) + '월'; %>
+<section class="panel calendar-panel" id="calendar" aria-labelledby="calendar-title" data-calendar-view="<%= calendar.mode %>" data-card="calendar" data-slot="3" data-label="프로젝트 캘린더">
+  <header class="panel-head">
+    <h2 id="calendar-title">프로젝트 캘린더</h2>
+    <nav class="calendar-switch" aria-label="캘린더 보기">
+      <% for (const [mode, label] of [['week', '주간'], ['month', '월간']]) { %>
+        <a href="<%= calendarUrl(mode, calendar.anchor) %>" <%- calendar.mode === mode ? 'aria-current="page"' : '' %>><%= label %></a>
+      <% } %>
+    </nav>
+  </header>
+  <div class="calendar-controls">
+    <div class="calendar-navigation">
+      <a class="button" href="<%= calendarUrl(calendar.mode, calendar.previous) %>" aria-label="이전 기간">‹</a>
+      <a class="button" href="<%= calendarUrl(calendar.mode, calendar.next) %>" aria-label="다음 기간">›</a>
+      <a class="button" href="<%= calendarUrl(calendar.mode, today) %>">오늘</a>
+    </div>
+    <div class="calendar-period">
+      <strong><%= monthLabel(calendar.month) %></strong>
+      <% if (calendar.mode === 'week') { %><span><%= shortDate(weekDays[0]) %> – <%= shortDate(weekDays[6]) %></span><% } %>
+    </div>
+  </div>
+  <% if (calendar.mode === 'month') { %>
+    <div class="calendar-legend" aria-label="프로젝트 기간 색상"><span>경과 기간</span><span>마감일까지 예정</span></div>
+  <% } %>
+  <% if (addedTodo) { %><p class="calendar-confirmation" role="status">할 일을 추가했어요. <a class="text-link" href="/todos#todo-<%= addedTodo.id %>">할 일 보기 ↗</a></p><% } %>
+  <div class="calendar-board">
+    <div class="calendar-weekdays">
+      <% for (const day of calendar.weekdays) { %><span><%= day %></span><% } %>
+    </div>
+    <% for (const { days, segments, todos, rows } of calendar.weeks) { %>
+      <div class="calendar-week">
+        <% for (const [column, day] of days.entries()) { %>
+          <div class="calendar-cell <%= calendar.mode === 'month' && day.slice(0, 7) !== calendar.month.slice(0, 7) ? 'outside-month' : '' %>" style="grid-column:<%= column + 1 %>;grid-row:1 / <%= rows + 1 %>">
+            <div class="calendar-cell-heading">
+              <time datetime="<%= day %>" aria-label="<%= shortDate(day) %>" <%- day === today ? 'aria-current="date"' : '' %>><%= Number(day.slice(8)) %></time>
+              <% if (calendar.mode === 'month') { %><%- include('calendar-todo-add-link', { day, mode: calendar.mode }) %><% } %>
+            </div>
+            <% if (todos[column]?.length) { %>
+              <div class="calendar-todo-groups">
+                <% for (const { projectId, items } of todos[column]) { %>
+                  <%- include('calendar-todos', { day, project: projectFor(projectId), items }) %>
+                <% } %>
+              </div>
+            <% } %>
+            <% if (calendar.mode === 'week') { %><%- include('calendar-todo-add-link', { day, mode: calendar.mode }) %><% } %>
+          </div>
+        <% } %>
+        <% for (const { project, start, end, first, last, lane, elapsedPercent, continuesBefore, continuesAfter } of segments) {
+          const label = project.name + ' · ' + start + ' ~ ' + end + (project.progress < 100 ? ' · 진행 중' : ' · 완료'); %>
+          <a class="calendar-project <%= elapsedPercent === 0 ? 'calendar-planned' : '' %> <%= continuesBefore ? 'continues-before' : '' %> <%= continuesAfter ? 'continues-after' : '' %>" style="--project-color:<%= project.color %>;--elapsed:<%= elapsedPercent %>%;grid-column:<%= first + 1 %> / <%= last + 2 %>;grid-row:<%= lane + 2 %>" href="/projects/<%= project.id %>" aria-label="<%= label %>" title="<%= label %>"><span class="calendar-entry-title"><%= project.name %></span></a>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</section>
+<dialog class="panel form-panel calendar-todo-dialog" id="calendar-todo-dialog" aria-labelledby="calendar-todo-dialog-title">
+  <h2 id="calendar-todo-dialog-title">할 일 추가</h2>
+  <p class="muted" data-calendar-todo-date></p>
+  <form method="post">
+    <%- include('calendar-todo-fields', { draft: {} }) %>
+    <div class="actions">
+      <button class="button" type="button" data-calendar-todo-close>취소</button>
+      <button class="button primary">추가</button>
+    </div>
+  </form>
+</dialog>

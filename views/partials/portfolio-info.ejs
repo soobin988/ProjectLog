@@ -1,0 +1,19 @@
+<div class="portfolio-info" data-portfolio-info>
+  <button class="button portfolio-info-trigger" type="button" aria-label="프로젝트 정보" aria-controls="portfolio-info-card" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>
+    </svg>
+  </button>
+  <section class="panel portfolio-info-card" id="portfolio-info-card" aria-labelledby="portfolio-info-title" hidden>
+    <h2 id="portfolio-info-title">프로젝트 정보</h2>
+    <dl class="portfolio-information">
+      <dt>상태</dt><dd><span class="status <%= status %>"><%= statuses[status] || '상태 미지정' %></span></dd>
+      <% if (period) { %><dt>기간</dt><dd><%= period %></dd><% } %>
+      <% if (item.role) { %><dt>역할</dt><dd><%= item.role %></dd><% } %>
+      <% if (technologies.length) { %><dt>기술</dt><dd><%= technologies.join(' · ') %></dd><% } %>
+      <dt>등록일</dt><dd><time datetime="<%= displayDate(item.createdAt) %>"><%= displayDate(item.createdAt) %></time></dd>
+      <% if (project) { %><dt>연결 프로젝트</dt><dd><a class="text-link" href="/projects/<%= project.id %>"><%= project.name %></a></dd><% } %>
+      <% if (!shared) { %><dt>공개 범위</dt><dd><%= item.isPublic ? '공개' : '비공개' %></dd><% } %>
+    </dl>
+  </section>
+</div>
