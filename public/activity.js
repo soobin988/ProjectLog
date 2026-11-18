@@ -1,26 +1,55 @@
 (() => {
   const idleAfter = 60_000;
-  const reportEvery = 15_000;
+  const slotMs = 5000;
+  const clockOrigin = Date.now() - performance.now();
+  const pending = new Map();
   let lastActivity = performance.now();
   let checkpoint = document.hidden ? null : lastActivity;
-  let timer;
+  let collecting;
+  let reporting;
+  let sending = false;
 
-  function report() {
+  function collect() {
     if (checkpoint === null) return;
     const now = performance.now();
-    const elapsed = Math.floor(Math.min(now, lastActivity + idleAfter) - checkpoint);
+    const start = clockOrigin + checkpoint;
+    const end = clockOrigin + Math.min(now, lastActivity + idleAfter);
+    for (let slot = Math.floor(start / slotMs); slot <= Math.floor(end / slotMs); slot++) {
+      const midpoint = (slot + 0.5) * slotMs;
+      if (midpoint < start || midpoint >= end) continue;
+      const minute = Math.floor(slot / 12);
+      pending.set(minute, (pending.get(minute) || 0) | (1 << (slot % 12)));
+    }
     checkpoint = now;
-    if (elapsed < 1000) return;
-    const body = new URLSearchParams({ elapsed: Math.min(elapsed, 20_000) });
-    if (navigator.sendBeacon?.('/activity/ping', body)) return;
-    fetch('/activity/ping', { method: 'POST', body, keepalive: true }).catch(() => {});
+    const oldest = Math.floor(Date.now() / 60_000) - 10;
+    for (const minute of pending.keys()) if (minute < oldest) pending.delete(minute);
+  }
+
+  async function report(leaving = false) {
+    collect();
+    if (!pending.size || (!leaving && sending)) return;
+    const snapshot = [...pending];
+    const body = new URLSearchParams({ slots: JSON.stringify(snapshot) });
+    if (leaving && navigator.sendBeacon?.('/activity/ping', body)) return;
+    sending = true;
+    try {
+      const response = await fetch('/activity/ping', { method: 'POST', body, keepalive: true });
+      if (!response.ok) return;
+      for (const [minute, slots] of snapshot) {
+        const remaining = (pending.get(minute) || 0) & ~slots;
+        if (remaining) pending.set(minute, remaining);
+        else pending.delete(minute);
+      }
+    } catch {
+      // The same slots can be retried safely because the server merges their bits.
+    } finally { sending = false; }
   }
 
   function noteActivity() {
     if (document.hidden) return;
     const now = performance.now();
     if (checkpoint === null || now - lastActivity >= idleAfter) {
-      report();
+      collect();
       checkpoint = now;
     }
     lastActivity = now;
@@ -29,14 +58,16 @@
   function start() {
     if (document.hidden) return;
     noteActivity();
-    timer ??= setInterval(report, reportEvery);
+    collecting ??= setInterval(collect, 5000);
+    reporting ??= setInterval(() => report(), 60_000);
   }
 
   function stop() {
-    report();
+    report(true);
     checkpoint = null;
-    clearInterval(timer);
-    timer = undefined;
+    clearInterval(collecting);
+    clearInterval(reporting);
+    collecting = reporting = undefined;
   }
 
   for (const event of ['pointerdown', 'keydown', 'scroll']) {

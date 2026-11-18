@@ -24,7 +24,7 @@
     </span>
     <span>남은 문제 수</span><strong><%= remainingIssueCount %></strong>
   </a>
-  <section class="panel today-panel" data-card="today" data-slot="4" data-label="작업 흐름도">
+  <section id="work-flow" class="panel today-panel" data-card="today" data-slot="4" data-label="작업 흐름도">
     <header class="panel-head"><h2>작업 흐름도</h2></header>
     <div class="dashboard-flow-scroll" role="region" aria-label="날짜별 작업 기록" tabindex="0">
       <%- include('partials/dashboard-day', { date: today, entries: todayEntries }) %>
@@ -32,6 +32,7 @@
         <%- include('partials/dashboard-day', { date, entries }) %>
       <% } %>
     </div>
+    <%- include('partials/pagination', { pagination: flowPagination }) %>
   </section>
   <%- include('partials/calendar') %>
   <section class="panel overview-panel" data-card="overview" data-slot="6" data-label="프로젝트 진행률">

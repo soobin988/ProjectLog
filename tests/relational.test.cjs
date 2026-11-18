@@ -15,6 +15,7 @@ test('relational migration and application flows', { skip: !url }, async t => {
   process.env.PROJECT_LOG_MYSQL_URL = url;
   process.env.PROJECT_LOG_DEVELOPER_UID = '10000';
   process.env.OPENAI_API_KEY = 'test-only';
+  process.env.PROJECT_LOG_AI_CONCURRENCY = '2';
   const folder = await mkdtemp(path.join(os.tmpdir(), 'projectlog-relational-test-'));
   process.env.PROJECT_LOG_DATA_FILE = path.join(folder, 'workspace.json');
   process.env.PROJECT_LOG_PORTFOLIO_UPLOADS = path.join(folder, 'portfolio');
@@ -22,10 +23,17 @@ test('relational migration and application flows', { skip: !url }, async t => {
   let requestGate;
   let apiFailure = false;
   let saveFailure = false;
+  let failedSaves = 0;
   const workspaceStore = require('../services/workspace-store');
+  const workspaceLoads = [];
+  const originalLoad = workspaceStore.loadWorkspace;
+  workspaceStore.loadWorkspace = (...args) => { workspaceLoads.push(args[2]); return originalLoad(...args); };
   const originalSave = workspaceStore.saveWorkspace;
   workspaceStore.saveWorkspace = (...args) => {
-    if (saveFailure) throw Object.assign(new Error('test storage unavailable'), { code: 'TEST_DB_UNAVAILABLE' });
+    if (saveFailure) {
+      failedSaves++;
+      throw Object.assign(new Error('test storage unavailable'), { code: 'TEST_DB_UNAVAILABLE' });
+    }
     return originalSave(...args);
   };
   require.cache[require.resolve('../services/openai')] = { exports: { responses: {
@@ -107,6 +115,88 @@ test('relational migration and application flows', { skip: !url }, async t => {
       const usage = await sql('SELECT * FROM projectlog_ai_usage WHERE uid=10000');
       assert.equal(usage.length, 2);
       assert.ok(usage.every(row => row.feedback_id && row.node_id === nodeId && row.total_tokens === 15));
+    });
+    await t.test('node file requests check ownership without loading a workspace; ETags stay private', async () => {
+      const [file] = await sql('SELECT stored_name FROM node_files WHERE node_id=?', [nodeId]);
+      const route = '/projects/' + projectId + '/nodes/' + nodeId + '/files/' + file.stored_name;
+      const loaded = workspaceLoads.length;
+      const queries = [];
+      const execute = pool.execute;
+      pool.execute = function (statement, ...args) { queries.push(statement); return execute.call(this, statement, ...args); };
+      let response;
+      try { response = await fetch(base + route, { headers: { Cookie: cookie } }); await response.arrayBuffer(); }
+      finally { pool.execute = execute; }
+      assert.equal(response.status, 200);
+      assert.equal(workspaceLoads.length, loaded);
+      assert.equal(queries.length, 2);
+      assert.equal(response.headers.get('cache-control'), 'private, no-cache');
+      const etag = response.headers.get('etag');
+      assert.ok(etag);
+      response = await fetch(base + route, { cache: 'no-cache', headers: { Cookie: cookie, 'If-None-Match': etag } });
+      assert.equal(response.status, 304);
+      response = await fetch(base + route, { cache: 'no-cache', headers: { Cookie: secondCookie, 'If-None-Match': etag } });
+      assert.equal(response.status, 404);
+      response = await fetch(base + route, { redirect: 'manual', headers: { 'If-None-Match': etag } });
+      assert.equal(response.status, 303);
+    });
+    await t.test('invalid uploads leave no files and a cancelled multipart upload is cleaned', async () => {
+      const { readdir } = require('node:fs/promises');
+      const directory = process.env.PROJECT_LOG_DATA_FILE + '.uploads';
+      const before = await readdir(directory);
+      const data = new FormData();
+      data.set('title', 'Bad upload'); data.set('date', '2026-11-18');
+      data.set('files', new Blob(['invalid png'], { type: 'image/png' }), 'bad.png');
+      let response = await form('/projects/' + projectId + '/nodes/new', data, cookie);
+      assert.equal(response.status, 422);
+      assert.deepEqual(await readdir(directory), before);
+      assert.deepEqual(await readdir(directory + '.pending'), []);
+      const valid = new FormData();
+      valid.set('title', '한글 파일'); valid.set('date', '2026-11-18');
+      valid.set('code', '가'.repeat(10000));
+      valid.set('files', new Blob([Buffer.from('89504e470d0a1a0a00000000', 'hex')], { type: 'image/png' }), '한글.png');
+      const failures = failedSaves;
+      try {
+        saveFailure = true;
+        response = await form('/projects/' + projectId + '/nodes/new', valid, cookie);
+        assert.equal(response.status, 500);
+      } finally { saveFailure = false; }
+      assert.equal(failedSaves, failures + 1, 'Full-length Unicode code must reach storage validation');
+      assert.deepEqual(await readdir(directory), before);
+      assert.deepEqual(await readdir(directory + '.pending'), []);
+      const http = require('node:http');
+      const request = http.request(base + '/projects/' + projectId + '/nodes/new', {
+        method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'multipart/form-data; boundary=cancelled' }
+      });
+      request.on('error', () => {});
+      request.write('--cancelled\r\nContent-Disposition: form-data; name="files"; filename="cancel.png"\r\nContent-Type: image/png\r\n\r\n');
+      request.write(Buffer.from('89504e470d0a1a0a00000000', 'hex'));
+      let started = false;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if ((await readdir(directory + '.pending')).length) { started = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      request.destroy();
+      assert.ok(started, 'Upload must reach streaming storage before it is cancelled');
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if (!(await readdir(directory + '.pending')).length) break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.deepEqual(await readdir(directory + '.pending'), []);
+      assert.deepEqual(await readdir(directory), before);
+    });
+    await t.test('activity batches use one write and repeated slots do not double count', async () => {
+      const minute = Math.floor(Date.now() / 60_000);
+      const body = { slots: JSON.stringify([[minute - 1, 15], [minute - 2, 3], [minute - 1, 12]]) };
+      let response = await form('/activity/ping', body, cookie);
+      assert.equal(response.status, 204);
+      response = await form('/activity/ping', body, cookie);
+      assert.equal(response.status, 204);
+      const rows = await sql('SELECT minute_slot,active_slots FROM projectlog_activity WHERE uid=10000 ORDER BY minute_slot');
+      assert.deepEqual(rows.map(row => row.active_slots), [3, 15]);
+      response = await form('/activity/ping', { slots: JSON.stringify([[minute + 1, 1]]) }, cookie);
+      assert.equal(response.status, 422);
+      response = await form('/activity/ping', { elapsed: '15000' }, secondCookie);
+      assert.equal(response.status, 204, 'Previously cached clients retain the elapsed protocol');
     });
     await t.test('todo, parent chain, SQL aggregates and optimistic locking', async () => {
       let response = await form('/todos', { title: '후속 테스트', projectId }, cookie);
@@ -213,6 +303,107 @@ test('relational migration and application flows', { skip: !url }, async t => {
       assert.ok(!statements.some(sql => /DELETE FROM portfolio_(files|technologies|links)/.test(sql)));
       assert.ok(!statements.some(sql => /INSERT INTO portfolio_(files|technologies)/.test(sql)));
       assert.equal((await store.get(10000, portfolioId)).github, 'https://github.com/soobin988/ProjectLog');
+    });
+    await t.test('AI capacity is shared by feedback and portfolio requests and is released safely', async () => {
+      const { acquireAiSlot } = require('../services/ai-capacity');
+      const reservations = await Promise.allSettled([acquireAiSlot(), acquireAiSlot(), acquireAiSlot()]);
+      const releases = reservations.filter(result => result.status === 'fulfilled').map(result => result.value);
+      assert.equal(releases.length, 2);
+      assert.equal(reservations.filter(result => result.status === 'rejected')[0].reason.code, 'AI_BUSY');
+      try {
+        const calls = requests;
+        let response = await form('/projects/' + projectId + '/nodes/' + nodeId + '/feedback', { style: 'mentor', request: 'Capacity test' }, cookie);
+        assert.equal(response.status, 503);
+        response = await form('/portfolio/' + portfolioId + '/analyze', { analysisCategory: '*', analysisTags: 'strengths' }, cookie);
+        assert.equal(response.status, 503);
+        assert.equal(requests, calls, 'Busy requests must stop before OpenAI is called');
+        await releases[0]();
+        const replacement = await acquireAiSlot();
+        releases.push(replacement);
+        await releases[0]();
+        const [[active]] = await pool.execute('SELECT COUNT(*) AS count FROM projectlog_ai_slots WHERE lease_token IS NOT NULL');
+        assert.equal(active.count, 2, 'An old release must not clear the replacement lease');
+      } finally { await Promise.all(releases.map(release => release())); }
+    });
+    await t.test('private and shared portfolio files respect visibility without workspace loads', async () => {
+      const data = new FormData();
+      data.set('images', new Blob([Buffer.from('89504e470d0a1a0a00000000', 'hex')], { type: 'image/png' }), 'portfolio.png');
+      let response = await form('/portfolio/' + portfolioId + '/files', data, cookie);
+      assert.equal(response.status, 303);
+      const [file] = await sql('SELECT id FROM portfolio_files WHERE portfolio_id=?', [portfolioId]);
+      const loaded = workspaceLoads.length;
+      response = await fetch(base + '/portfolio/' + portfolioId + '/files/' + file.id, { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      assert.equal(workspaceLoads.length, loaded);
+      response = await fetch(base + '/portfolio/shared/' + portfolioId + '/files/' + file.id);
+      assert.equal(response.status, 404);
+      await sql('UPDATE portfolios SET is_public=TRUE WHERE id=?', [portfolioId]);
+      response = await fetch(base + '/portfolio/shared/' + portfolioId + '/files/' + file.id);
+      assert.equal(response.status, 200);
+      const etag = response.headers.get('etag');
+      await sql('UPDATE portfolios SET is_public=FALSE WHERE id=?', [portfolioId]);
+      response = await fetch(base + '/portfolio/shared/' + portfolioId + '/files/' + file.id, { cache: 'no-cache', headers: { 'If-None-Match': etag } });
+      assert.equal(response.status, 404);
+    });
+    await t.test('static assets use fingerprinted caching and conditional requests', async () => {
+      const { assetUrl } = require('../services/static-assets');
+      let response = await fetch(base + assetUrl('/ui.js'));
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('cache-control'), /31536000, immutable/);
+      const etag = response.headers.get('etag');
+      response = await fetch(base + assetUrl('/ui.js'), { cache: 'no-cache', headers: { 'If-None-Match': etag } });
+      assert.equal(response.status, 304);
+      response = await fetch(base + '/ui.js?v=outdated');
+      assert.match(response.headers.get('cache-control'), /max-age=0, must-revalidate/);
+    });
+    await t.test('dashboard and notifications paginate; calendar keeps full spans but only loads visible Todos', async () => {
+      let response = await form('/projects', { name: 'Paged Project', color: '#007fff', category: 'development', icon: 'folder' }, cookie);
+      const pagedProject = response.headers.get('location').split('/').at(-1);
+      const ids = Array.from({ length: 65 }, () => randomUUID());
+      await pool.query(`INSERT INTO nodes (id,project_id,title,content,work_date,error_status,action_content,result_content,sort_order) VALUES ?`,
+        [ids.map((id,index) => [id,pagedProject,'Paging Node ' + index,'large body not needed by dashboard','2020-01-01','issue','','',index])]);
+      await pool.query('INSERT INTO activity_logs (user_id,project_id,node_id,activity_type,description) VALUES ?',
+        [ids.map(id => [10000,pagedProject,id,'node_created','paging'])]);
+      await pool.query('INSERT INTO alerts (user_id,alert_key,node_id,type,message,created_at) VALUES ?',
+        [ids.map(id => [10000,'issue-' + id,id,'issues','paging','2020-01-01 00:00:00'])]);
+      const inWeek = randomUUID(), outside = randomUUID();
+      await pool.query('INSERT INTO todos (id,user_id,project_id,title,description,due_date,sort_order) VALUES ?', [[
+        [inWeek,10000,pagedProject,'Visible Calendar Todo','','2020-01-01',100],
+        [outside,10000,pagedProject,'Outside Calendar Todo','','2021-01-01',101]
+      ]]);
+      const dashboard = await fetch(base + '/?view=week&date=2020-01-01', { headers: { Cookie: cookie } });
+      const html = await dashboard.text();
+      assert.equal(dashboard.status, 200, html);
+      assert.ok((html.match(/class="dashboard-node /g) || []).length <= 30);
+      assert.ok(html.includes('flowPage=2'));
+      const calendar = html.split('<div class="calendar-board">')[1].split('</section>')[0];
+      assert.ok(calendar.includes('Visible Calendar Todo'));
+      assert.ok(!calendar.includes('Outside Calendar Todo'));
+      assert.equal(workspaceLoads.at(-1).nodes, false);
+      response = await fetch(base + '/?flowPage=2', { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      assert.ok((await response.text()).includes('flowPage=3'));
+      response = await fetch(base + '/?view=month&date=2020-01-01', { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      assert.ok((await response.text()).includes('Paged Project · 2020-01-01'));
+      const loaded = workspaceLoads.length;
+      response = await fetch(base + '/notifications?tab=issues', { headers: { Cookie: cookie } });
+      const first = await response.text();
+      assert.equal(response.status, 200);
+      assert.equal((first.match(/<li class="notification /g) || []).length, 30);
+      assert.ok(first.includes('page=2'));
+      response = await fetch(base + '/notifications?tab=issues&page=2', { headers: { Cookie: cookie } });
+      const second = await response.text();
+      assert.equal((second.match(/<li class="notification /g) || []).length, 30);
+      assert.ok(second.includes('page=3'));
+      assert.equal(workspaceLoads.length, loaded, 'Notification reads must bypass full workspace loading');
+      const stale = await workspaceStore.loadWorkspace(pool, 10000);
+      response = await form('/notifications/issue-' + ids[0] + '/read?page=2', {}, cookie);
+      assert.equal(response.status, 303);
+      assert.ok(response.headers.get('location').includes('page=2'));
+      await assert.rejects(workspaceStore.saveWorkspace(pool, stale, stale.records), { status: 409 });
+      response = await form('/projects/' + pagedProject + '/delete', {}, cookie);
+      assert.equal(response.status, 303);
     });
     await t.test('other members cannot read or mutate nodes, files, feedback, actions, Todos or Portfolios', async () => {
       const nodeUrl = '/projects/' + projectId + '/nodes/' + nodeId;

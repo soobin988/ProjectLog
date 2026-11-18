@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { recordActivity, memberUsage, dailyUsage } = require('../services/member-usage');
+const { recordActivity, recordActivitySlots, memberUsage, dailyUsage } = require('../services/member-usage');
 const { maxMemberLimit, readMemberLimit, setMemberLimit } = require('../services/membership');
 const { findMember, removeMemberData } = require('../services/member-removal');
 const { normalizeLayout, saveDashboardDefault } = require('../services/dashboard-default');
@@ -31,6 +31,15 @@ function missing(res) {
 
 router.post('/activity/ping', async (req, res) => {
   if (!req.user) return res.sendStatus(401);
+  if (req.body?.slots !== undefined) {
+    if (typeof req.body.slots !== 'string' || req.body.slots.length > 4096) return res.sendStatus(422);
+    let slots;
+    try { slots = JSON.parse(req.body.slots); }
+    catch { return res.sendStatus(422); }
+    try { await recordActivitySlots(req.user.uid, slots, req.memberGeneration); }
+    catch (error) { if (error.status === 422) return res.sendStatus(422); throw error; }
+    return res.sendStatus(204);
+  }
   const elapsed = Number(req.body?.elapsed);
   if (!Number.isInteger(elapsed) || elapsed < 1000 || elapsed > 20_000) return res.sendStatus(422);
   await recordActivity(req.user.uid, elapsed, req.memberGeneration);

@@ -1,11 +1,11 @@
 const express = require('express');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { mkdirSync, unlinkSync, writeFileSync } = require('node:fs');
+const { mkdir, rename, unlink } = require('node:fs/promises');
 const { projects, nodes, todos, saveData, uploadDirectory } = require('../db');
 const { pool, ready } = require('../services/mysql');
 const { removeNodeFiles } = require('../services/member-removal');
-const { extensionTypes, matchesFileType } = require('../services/attachment-types');
+const { readNodeUploads, cleanupUploads, maxFiles, maxFileBytes, limitMessage: fileLimitMessage } = require('../services/node-uploads');
 
 const { base, projectUrl, setProject, setNode, seoulDate, value, findFeedback, withUpdatedFeedback,
   feedbackEntries, nodeDetailUrl, workStatuses, errorStatuses, workStatusFor, errorStatusFor } = require('./shared');
@@ -13,10 +13,6 @@ const { base, projectUrl, setProject, setNode, seoulDate, value, findFeedback, w
 const router = express.Router();
 router.param('projectId', setProject);
 router.param('nodeId', setNode);
-
-const maxFiles = 8;
-const maxFileBytes = 8 * 1024 * 1024;
-const fileLimitMessage = `파일은 최대 ${maxFiles}개, 각 8MB까지 등록할 수 있습니다.`;
 
 function renderEditor(res, node, uploading = false, error = '') {
   const followUp = res.locals.feedbackFollowUp;
@@ -42,17 +38,6 @@ function editorOrigin(req, res, next) {
 
 router.get(base + '/nodes/:nodeId/edit', editorOrigin, (req, res) => renderEditor(res, req.node));
 
-router.get(base + '/nodes/:nodeId/files/:fileId', (req, res, next) => {
-  const file = req.node.revision?.files?.find(item => item.id === req.params.fileId);
-  if (!file) return next();
-  res.set('X-Content-Type-Options', 'nosniff');
-  if (!file.type.startsWith('image/') || req.query.download === '1') {
-    return res.download(file.id, file.name, { root: uploadDirectory });
-  }
-  res.type(file.type);
-  res.sendFile(file.id, { root: uploadDirectory });
-});
-
 function webUrl(text) {
   if (!/^https?:\/\//i.test(text) || /\s/.test(text)) return null;
   try {
@@ -63,34 +48,30 @@ function webUrl(text) {
   }
 }
 
-const readUpload = express.raw({ type: 'multipart/form-data', limit: maxFiles * maxFileBytes + 1024 * 1024 });
-
 function editorPost(uploading = false) {
-  return (req, res, next) => {
-    readUpload(req, res, error => {
-      if (error?.type === 'entity.too.large') {
-        const draft = res.locals.feedbackFollowUp ? newNode() : req.node || newNode();
-        return renderEditor(res.status(413), draft, uploading, fileLimitMessage);
+  return async (req, res, next) => {
+    try {
+      const uploads = await readNodeUploads(req, res);
+      await saveNode(req, res, uploading, uploads);
+    } catch (error) {
+      if (req.aborted) return;
+      if ([413, 422].includes(error.status)) {
+        const previous = res.locals.feedbackFollowUp ? newNode() : req.node || newNode();
+        const submitted = keys => Object.fromEntries(keys.filter(key => typeof req.body?.[key] === 'string')
+          .map(key => [key, req.body[key]]));
+        const draft = { ...previous, ...submitted(['title', 'date', 'note', 'status', 'errorStatus', 'issueType', 'parentNodeId']),
+          ai: { ...previous.ai, title: value(req, 'titleAi') === 'yes', note: value(req, 'noteAi') === 'yes' },
+          revision: { ...previous.revision, ...submitted(['github', 'link', 'code']), codeAi: value(req, 'codeAi') === 'yes' } };
+        return renderEditor(res.status(error.status), draft, uploading, error.message);
       }
-      if (error) return next(error);
-      saveNode(req, res, uploading).catch(next);
-    });
+      next(error);
+    } finally {
+      await cleanupUploads(req);
+    }
   };
 }
 
-async function saveNode(req, res, uploading) {
-  let uploads = [];
-  if (Buffer.isBuffer(req.body)) {
-    try {
-      const form = await new Response(req.body, { headers: { 'Content-Type': req.get('Content-Type') } }).formData();
-      uploads = form.getAll('files').filter(item => typeof item !== 'string' && item.name);
-      req.body = Object.fromEntries([...form].filter(([, item]) => typeof item === 'string'));
-    } catch {
-      const draft = res.locals.feedbackFollowUp ? newNode() : req.node || newNode();
-      return renderEditor(res.status(400), draft, uploading, '첨부 파일을 읽지 못했습니다. 파일을 다시 선택하세요.');
-    }
-  }
-
+async function saveNode(req, res, uploading, uploads) {
   // Read the latest node after parsing the request so concurrent feedback is preserved.
   const source = res.locals.feedbackFollowUp?.source;
   const current = !source && req.node && nodes.find(node => node.id === req.node.id);
@@ -146,16 +127,7 @@ async function saveNode(req, res, uploading) {
   if (files.length + uploads.length > maxFiles || uploads.some(file => file.size > maxFileBytes)) {
     return renderEditor(res.status(422), draft, uploading, fileLimitMessage);
   }
-  const pending = [];
-  for (const file of uploads) {
-    const name = path.win32.basename(file.name).replace(/[\x00-\x1f\x7f]/g, '').slice(-180);
-    const type = extensionTypes[path.extname(name).toLowerCase()];
-    const bytes = Buffer.from(await file.arrayBuffer());
-    if (!matchesFileType(bytes, type)) {
-      return renderEditor(res.status(422), draft, uploading, 'ZIP, PNG, JPG, GIF, WEBP 형식의 파일을 선택하세요.');
-    }
-    pending.push({ file: { id: randomUUID(), name, type, size: bytes.length }, bytes });
-  }
+  const pending = uploads.map(({ temporaryPath, ...file }) => ({ file, temporaryPath }));
   revision.github = githubUrl?.href || '';
   revision.link = relatedUrl?.href || '';
   const latestNode = current && nodes.find(node => node.id === current.id);
@@ -180,10 +152,10 @@ async function saveNode(req, res, uploading) {
   }
   const written = [];
   try {
-    if (pending.length) mkdirSync(uploadDirectory, { recursive: true });
-    for (const { file, bytes } of pending) {
+    if (pending.length) await mkdir(uploadDirectory, { recursive: true, mode: 0o700 });
+    for (const { file, temporaryPath } of pending) {
       const destination = path.join(uploadDirectory, file.id);
-      writeFileSync(destination, bytes, { flag: 'wx' });
+      await rename(temporaryPath, destination);
       written.push(destination);
     }
     if (latestNode) {
@@ -193,7 +165,10 @@ async function saveNode(req, res, uploading) {
       await saveData(projects, [...nextNodes, { ...draft, projectId: req.project.id, feedback: [] }]);
     }
   } catch (error) {
-    for (const destination of written) unlinkSync(destination);
+    const cleanup = await Promise.allSettled(written.map(destination => unlink(destination)));
+    for (const result of cleanup) if (result.status === 'rejected' && result.reason.code !== 'ENOENT') {
+      console.error('Node upload cleanup failed:', result.reason.code);
+    }
     throw error;
   }
   res.redirect(res.locals.nodeBack || `${projectUrl(req)}#node-${draft.id}`);

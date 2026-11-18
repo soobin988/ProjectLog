@@ -82,8 +82,8 @@ async function removeFiles(files) {
 }
 
 function serveFile(res, file, next) {
-  res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' }).type(file.mime);
-  const options = { root: uploadRoot };
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-cache' }).type(file.mime);
+  const options = { root: uploadRoot, cacheControl: false };
   const sent = error => { if (error) next(error); };
   if (file.type !== 'image') return res.download(file.path, file.name, options, sent);
   res.sendFile(file.path, options, sent);

@@ -157,6 +157,6 @@ const pageUrl = shared ? sharePath : url;
     </ol><% } %>
   </section>
 <% } %>
-<% if (slides.length) { %><script src="/portfolio-slideshow.js" defer></script><% } %>
-<% if (!shared) { %><script src="/portfolio-material-editor.js" defer></script><% } %>
+<% if (slides.length) { %><script src="<%= assetUrl('/portfolio-slideshow.js') %>" defer></script><% } %>
+<% if (!shared) { %><script src="<%= assetUrl('/portfolio-material-editor.js') %>" defer></script><% } %>
 <%- include('partials/end') %>

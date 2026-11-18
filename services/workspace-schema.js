@@ -93,6 +93,9 @@ async function createWorkspaceTables(db) {
       FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE,
       FOREIGN KEY (feedback_id) REFERENCES feedbacks(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    `CREATE TABLE IF NOT EXISTS projectlog_ai_slots (
+      id TINYINT UNSIGNED PRIMARY KEY, lease_token CHAR(36), expires_at DATETIME(3)
+    ) ENGINE=InnoDB`,
     `CREATE TABLE IF NOT EXISTS projectlog_feedback_requests (
       user_id INT UNSIGNED NOT NULL, request_id CHAR(36) NOT NULL, generation INT UNSIGNED NOT NULL,
       node_id VARCHAR(80) NOT NULL, fingerprint CHAR(64) NOT NULL,
@@ -104,6 +107,7 @@ async function createWorkspaceTables(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   ];
   for (const sql of statements) await db.query(sql);
+  await db.query('INSERT IGNORE INTO projectlog_ai_slots (id) VALUES (1),(2),(3),(4),(5),(6),(7),(8)');
   const [activityColumns] = await db.query(`SELECT COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='activity_logs'`);
   if (!activityColumns.some(column => column.COLUMN_NAME === 'todo_id')) {

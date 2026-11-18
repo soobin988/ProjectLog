@@ -1,28 +1,34 @@
 const express = require('express');
 const path = require('node:path');
-const { projects, nodes, todos, readAlerts, saveData, useWorkspace } = require('./db');
+const { projects, nodes, todos, saveData, useWorkspace } = require('./db');
 const { router: accounts, loadAccount, requireAccount, verifyRequestOrigin, handleAccountConnectionError } = require('./routes/accounts');
 const { router: portfolio, publicRouter: sharedPortfolio } = require('./routes/portfolio');
+const { router: files, publicRouter: sharedFiles } = require('./routes/files');
 const { parser: feedbackMarkdown } = require('./services/feedback-markdown');
-const { buildCalendar, validAnchor } = require('./calendar');
+const { validAnchor } = require('./calendar');
 const { readDashboardDefault } = require('./services/dashboard-default');
 const { currentVersion, listUpdates } = require('./services/updates');
 const { pool, ready } = require('./services/mysql');
-const { userStatistics, dashboardActivity, dashboardSummary } = require('./services/workspace-statistics');
+const { userStatistics, dashboardSummary } = require('./services/workspace-statistics');
+const { dashboardData } = require('./services/dashboard-data');
+const { unreadCounts, listNotifications, markNotificationRead, pageNumber } = require('./services/notifications');
 
 const { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
   shortDate, defaultColor, validColor, completionDate, completionTime,
-  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackAlertId, feedbackEntries, seoulDate, timelineEntries, completedTodos,
-  latest, isUnresolvedIssue, todoFields, todoError, addTodo, nodeDetailUrl } = require('./routes/shared');
+  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, seoulDate, completedTodos,
+  todoFields, todoError, addTodo, nodeDetailUrl } = require('./routes/shared');
+
+const { assetUrl, assetHeaders } = require('./services/static-assets');
 
 const app = express();
+app.locals.assetUrl = assetUrl;
 
 app.disable('x-powered-by');
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.locals.currentVersion = currentVersion;
 app.use(express.urlencoded({ extended: false, limit: '256kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { setHeaders: assetHeaders }));
 app.use(verifyRequestOrigin);
 app.use(loadAccount);
 app.use(accounts);
@@ -35,98 +41,62 @@ app.use(async (req, res, next) => {
   res.locals.feedbackMarkdown = await feedbackMarkdown;
   next();
 });
+app.use(sharedFiles);
 app.use(sharedPortfolio);
 app.use(requireAccount);
+app.use(files);
 app.get('/statistics', async (req, res) => {
   if (!pool) return res.status(503).json({ error: '통계는 MySQL 모드에서 사용할 수 있어요.' });
   res.json(await userStatistics(await ready(), req.user.uid));
 });
-app.use(useWorkspace);
 
 Object.assign(app.locals, { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
   shortDate, defaultColor, validColor, completionDate, completionTime,
   feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, nodeDetailUrl });
 
-function alerts() {
-  const read = new Set(readAlerts);
-  return nodes.flatMap(node => {
-    const project = projectFor(node.projectId);
-    const destination = '/projects/' + project.id;
-    let feedbackNumber = node.feedback.filter(item => item.id).length;
-    const items = node.feedback.map((feedback, index) => {
-      return {
-        id: feedbackAlertId(node, feedback, index), type: 'feedback', project,
-        destination: feedbackSourceUrl({ projectId: project.id, nodeId: node.id, feedbackId: feedbackIdFor(node, feedback, index) }),
-        title: (feedback.id ? 'Feedback #' + feedbackNumber-- : 'AI 피드백') + ' · ' + node.title,
-        date: feedback.createdAt ? seoulDate.format(new Date(feedback.createdAt)) : node.date,
-        createdAt: feedback.createdAt || '', excerpt: feedback.text
-      };
-    });
-    if (isIssue(node)) items.push({
-      id: 'issue-' + node.id, type: 'issues', project, destination: destination + '#node-' + node.id,
-      title: node.title, date: node.date, createdAt: '', excerpt: node.note, status: errorStatuses[errorStatusFor(node)]
-    });
-    return items.map(item => ({ ...item, read: read.has(item.id) }));
-  }).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
-}
-
-app.get('/notifications', (req, res) => {
+app.get('/notifications', async (req, res) => {
   const tab = req.query.tab === 'feedback' ? 'feedback' : 'issues';
-  const items = alerts();
+  const page = pageNumber(req.query.page);
+  const { items, hasMore } = await listNotifications(req.user.uid, { tab, page });
+  const counts = await unreadCounts(req.user.uid);
+  const pageUrl = number => '/notifications?tab=' + tab + '&page=' + number;
   res.render('notifications', {
-    page: 'notifications', title: '알림', tab,
-    groups: Object.groupBy(items.filter(item => item.type === tab), item => item.date),
-    unreadIssues: items.filter(item => item.type === 'issues' && !item.read).length,
-    unreadFeedback: items.filter(item => item.type === 'feedback' && !item.read).length
+    page: 'notifications', title: '알림', tab, notificationPage: page,
+    groups: Object.groupBy(items, item => item.date), unreadIssues: counts.issues, unreadFeedback: counts.feedback,
+    pagination: { previous: page > 1 ? pageUrl(page - 1) : '', next: hasMore ? pageUrl(page + 1) : '' }
   });
 });
 
-app.post('/notifications/:alertId/read', async (req, res, next) => {
-  const items = alerts();
-  const item = items.find(alert => alert.id === req.params.alertId);
-  if (!item) return next();
-  if (!item.read) await saveData(projects, nodes, todos, [...readAlerts, item.id]);
+app.post('/notifications/:alertId/read', async (req, res) => {
+  const item = await markNotificationRead(req.user.uid, req.params.alertId);
+  if (!item) return res.status(404).render('missing', { page: '', title: '페이지를 찾을 수 없습니다' });
   if (req.get('Accept') === 'application/json') {
-    return res.json({ unread: items.filter(alert => !alert.read && alert.id !== item.id).length });
+    const counts = await unreadCounts(req.user.uid);
+    return res.json({ unread: counts.issues + counts.feedback });
   }
-  res.redirect(303, '/notifications?tab=' + item.type + '#alert-' + item.id);
+  res.redirect(303, '/notifications?tab=' + item.type + '&page=' + pageNumber(req.query.page) + '#alert-' + encodeURIComponent(req.params.alertId));
 });
+
+app.use(useWorkspace);
 
 app.get('/', async (req, res) => {
   const dashboardDefault = await readDashboardDefault();
   const today = seoulDate.format(new Date());
-  const statistics = pool ? await dashboardSummary(await ready(), req.user.uid) : null;
-  const activityRows = pool ? await dashboardActivity(await ready(), req.user.uid) : null;
-  const nodeById = new Map(nodes.map(node => [node.id, node]));
-  const flowNodes = activityRows ? activityRows.flowNodeIds.map(id => nodeById.get(id)).filter(Boolean) : nodes;
-  const recent = activityRows ? activityRows.recentNodeIds.map(id => nodeById.get(id)).filter(Boolean) : latest(nodes).slice(0, 5);
-  const entries = timelineEntries(flowNodes, completedTodos().reverse());
-  const activity = Object.groupBy(entries.filter(entry => entry.date <= today), entry => entry.date);
+  const statistics = await dashboardSummary(await ready(), req.user.uid);
+  const data = await dashboardData(await ready(), req.user.uid, req.query, today, [...projects]);
+  const activity = Object.groupBy(data.entries, entry => entry.date);
   const { [today]: todayEntries = [], ...pastEntries } = activity;
-  const notifications = alerts();
-  const nextTodos = new Map();
-  const dueDate = todo => validAnchor(todo.dueDate) ? todo.dueDate : '9999-12-31';
-  for (const todo of todos) {
-    if (todo.done || !todo.projectId) continue;
-    const current = nextTodos.get(todo.projectId);
-    if (!current || dueDate(todo) < dueDate(current)) nextTodos.set(todo.projectId, todo);
-  }
-  const addedTodo = todos.find(todo => todo.id === req.query.added && todo.dueDate === req.query.date);
+  const { items: recentAlerts } = await listNotifications(req.user.uid, { limit: 5 });
+  const counts = await unreadCounts(req.user.uid);
   res.render('dashboard', {
-    page: 'dashboard', title: '대시보드', projects, today, dashboardDefault, recent,
+    page: 'dashboard', title: '대시보드', projects, today, dashboardDefault, ...data,
     todayLabel: new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC'
     }).format(new Date(today + 'T00:00:00Z')),
-    todayEntries, pastEntries, nextTodos, addedTodo,
-    calendar: buildCalendar(req.query, today, projects, entries,
-      Object.groupBy(todos.filter(todo => todo.dueDate || !todo.done || todo.completedAt),
-        todo => todo.dueDate || (todo.done ? completionDate(todo) : today))),
-    progressProjects: projects.filter(project => project.progress < 100)
-      .sort((a, b) => a.progress - b.progress).slice(0, 4),
-    activeProjectCount: statistics ? Number(statistics.activeProjectCount) : projects.filter(project => project.progress < 100).length,
-    remainingIssueCount: statistics ? statistics.remainingIssueCount : nodes.filter(isUnresolvedIssue).length,
-    unreadAlerts: notifications.filter(item => !item.read).length,
-    recentAlerts: notifications.slice(0, 5)
+    todayEntries, pastEntries,
+    activeProjectCount: statistics.activeProjectCount,
+    remainingIssueCount: statistics.remainingIssueCount,
+    unreadAlerts: counts.issues + counts.feedback, recentAlerts
   });
 });
 

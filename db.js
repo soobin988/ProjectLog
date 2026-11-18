@@ -35,7 +35,7 @@ async function useWorkspace(req, res, next) {
   let options;
   if (req.method === 'GET' || req.method === 'HEAD') {
     options = { readOnly: true, history: req.path.endsWith('/revisions') };
-    if (req.path === '/projects' || req.path === '/todos' || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
+    if (req.path === '/' || req.path === '/projects' || req.path === '/todos' || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
       options.nodes = false;
       options.alerts = false;
       options.todos = req.path === '/todos';

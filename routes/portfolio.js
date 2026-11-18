@@ -7,11 +7,12 @@ const { projectFor, projectNodes, nodeDetailUrl, feedbackEntries, feedbackResult
 const store = require('../services/portfolio-store');
 const { normalizeCover, coverFor } = require('../services/portfolio-cover');
 const { materialState, materialEntries, materialsIn, isGithubUrl } = require('../services/portfolio-materials');
-const { uploads, orderedFiles, removeFiles, serveFile } = require('../services/portfolio-files');
+const { uploads, orderedFiles, removeFiles } = require('../services/portfolio-files');
 const { analyzePortfolio, analysisTags } = require('../services/portfolio-analysis');
 const { openAiConfigured } = require('../services/openai-settings');
 const { responseErrorMessage } = require('../services/openai-response');
 const { publicOrigin } = require('../services/public-origin');
+const { withAiSlot } = require('../services/ai-capacity');
 
 const router = Router();
 const publicRouter = Router();
@@ -416,12 +417,6 @@ router.post(itemRoute + '/categories', async (req, res) => {
   }
 });
 
-router.get(itemRoute + '/files/:fileId', (req, res, next) => {
-  const file = req.portfolio.files.find(file => file.id === req.params.fileId);
-  if (!file) return missing(res);
-  serveFile(res, file, next);
-});
-
 router.post(itemRoute + '/files', async (req, res) => {
   let added = [];
   try {
@@ -482,10 +477,10 @@ async function analyze(req, res) {
     };
     let analysis;
     try {
-      analysis = await analyzePortfolio([scopedEntry], scopeLabel, tags, uid, req.memberGeneration);
+      analysis = await withAiSlot(() => analyzePortfolio([scopedEntry], scopeLabel, tags, uid, req.memberGeneration));
     } catch (error) {
       console.error('Portfolio analysis failed:', error.status || error.code || error.name);
-      return fail(502, responseErrorMessage(error));
+      return fail(error.code === 'AI_BUSY' ? 503 : 502, error.code === 'AI_BUSY' ? error.message : responseErrorMessage(error));
     }
     const markdownText = text => text.replace(/[\\`*_{}\[\]()#+\-.!<>|]/g, '\\$&');
     const heading = '분석 대상: ' + markdownText(entry.title) + ' · ' + markdownText(scopeLabel);
@@ -507,10 +502,6 @@ publicRouter.param('sharedId', async (req, res, next, id) => {
   next();
 });
 publicRouter.get('/portfolio/shared/:sharedId', (req, res) => renderDetail(req, res, projectEntry(req.sharedPortfolio, true), { shared: true }));
-publicRouter.get('/portfolio/shared/:sharedId/files/:fileId', (req, res, next) => {
-  const file = req.sharedPortfolio.files.find(file => file.type === 'image' && file.id === req.params.fileId);
-  if (!file) return missing(res);
-  serveFile(res, file, next);
-});
+
 
 module.exports = { router, publicRouter, projectEntry };

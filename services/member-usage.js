@@ -60,12 +60,44 @@ async function recordActivity(uid, elapsedMs, generation) {
     buckets.set(minute, (buckets.get(minute) || 0) | bit);
   }
   if (!buckets.size) return;
-  const db = await usageDb();
-  for (const [minute, slots] of buckets) {
-    await db.execute(`INSERT INTO projectlog_activity (uid, minute_slot, active_slots)
-      SELECT u.uid, ?, ? ${currentMember}
-      ON DUPLICATE KEY UPDATE active_slots = active_slots | ?`, [minute, slots, uid, generation, slots]);
+  await writeActivityBuckets(uid, buckets, generation);
+}
+
+function activityBuckets(input, now = Date.now()) {
+  if (!Array.isArray(input) || input.length > 12) throw Object.assign(new Error('Invalid activity slots'), { status: 422 });
+  const currentMinute = Math.floor(now / 60_000);
+  const buckets = new Map();
+  for (const entry of input) {
+    if (!Array.isArray(entry) || entry.length !== 2) throw Object.assign(new Error('Invalid activity slots'), { status: 422 });
+    const [minute, mask] = entry;
+    if (!Number.isSafeInteger(minute) || minute < currentMinute - 10 || minute > currentMinute ||
+        !Number.isInteger(mask) || mask < 1 || mask > 4095) {
+      throw Object.assign(new Error('Invalid activity slots'), { status: 422 });
+    }
+    const elapsedSlots = Math.max(0, Math.min(12, Math.floor((now - minute * 60_000) / 5000 + 0.5)));
+    const allowed = (1 << elapsedSlots) - 1;
+    if (mask & ~allowed) throw Object.assign(new Error('Future activity slots'), { status: 422 });
+    buckets.set(minute, (buckets.get(minute) || 0) | mask);
   }
+  return buckets;
+}
+
+async function writeActivityBuckets(uid, buckets, generation) {
+  if (!buckets.size) return;
+  const db = await usageDb();
+  const selects = [];
+  const values = [];
+  for (const [minute, slots] of buckets) {
+    selects.push('SELECT u.uid, ? AS minute_slot, ? AS active_slots ' + currentMember);
+    values.push(minute, slots, uid, generation);
+  }
+  await db.execute(`INSERT INTO projectlog_activity (uid, minute_slot, active_slots)
+    SELECT uid, minute_slot, active_slots FROM (${selects.join(' UNION ALL ')}) AS activity_batch
+    ON DUPLICATE KEY UPDATE active_slots = projectlog_activity.active_slots | VALUES(active_slots)`, values);
+}
+
+async function recordActivitySlots(uid, input, generation) {
+  await writeActivityBuckets(uid, activityBuckets(input), generation);
 }
 
 const tokenCount = value => Number.isInteger(value) && value >= 0 && value <= 4_294_967_295 ? value : null;
@@ -154,4 +186,4 @@ async function dailyUsage(uid, days) {
   }));
 }
 
-module.exports = { usageDb, recordActivity, trackAiResponse, linkFeedbackUsage, memberUsage, dailyUsage };
+module.exports = { usageDb, recordActivity, recordActivitySlots, activityBuckets, trackAiResponse, linkFeedbackUsage, memberUsage, dailyUsage };

@@ -437,3 +437,8 @@ CREATE TABLE projectlog_feedback_requests (
       FOREIGN KEY (user_id) REFERENCES projectlog_users(uid) ON DELETE CASCADE,
       FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE projectlog_ai_slots (
+      id TINYINT UNSIGNED PRIMARY KEY, lease_token CHAR(36), expires_at DATETIME(3)
+    ) ENGINE=InnoDB;
+INSERT INTO projectlog_ai_slots (id) VALUES (1),(2),(3),(4),(5),(6),(7),(8);

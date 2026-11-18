@@ -99,6 +99,6 @@
     <%- include('partials/feedback-controls', { node, item: active.item, fromList }) %>
   <% } %>
 </div>
-<script src="/feedback-highlights.js" defer></script>
-<% if (files.length) { %><script src="/feedback-attachments.js" defer></script><% } %>
+<script src="<%= assetUrl('/feedback-highlights.js') %>" defer></script>
+<% if (files.length) { %><script src="<%= assetUrl('/feedback-attachments.js') %>" defer></script><% } %>
 <%- include('partials/end') %>

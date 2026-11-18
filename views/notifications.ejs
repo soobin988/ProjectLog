@@ -12,7 +12,7 @@
       <ul>
         <% for (const item of items) { %>
           <li class="notification <%= item.read ? 'notification-read' : '' %>" id="alert-<%= item.id %>" style="--project-color:<%= item.project.color %>">
-            <form action="/notifications/<%= item.id %>/read" method="post">
+            <form action="/notifications/<%= item.id %>/read?page=<%= notificationPage %>" method="post">
               <button type="submit" <%= item.read ? 'disabled' : '' %>>
                 <span class="notification-meta"><%= item.project.name %><% if (item.status) { %> · <%= item.status %><% } %></span>
                 <strong><%= item.title %></strong>
@@ -27,4 +27,5 @@
     </details>
   <% } %>
 </section>
+<%- include('partials/pagination') %>
 <%- include('partials/end') %>

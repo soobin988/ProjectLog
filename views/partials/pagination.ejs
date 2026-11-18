@@ -1,0 +1,6 @@
+<% if (pagination.previous || pagination.next) { %>
+<nav class="actions" aria-label="이전·다음 기록">
+  <% if (pagination.previous) { %><a class="button" href="<%= pagination.previous %>">이전</a><% } %>
+  <% if (pagination.next) { %><a class="button" href="<%= pagination.next %>">다음</a><% } %>
+</nav>
+<% } %>
