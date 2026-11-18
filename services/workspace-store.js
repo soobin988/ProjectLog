@@ -52,26 +52,32 @@ function normalizeRecords(uid, input) {
   return { records, projectIds, nodeIds };
 }
 
-async function readWorkspaceRows(db, uid) {
+async function readWorkspaceRows(db, uid, options) {
   const [[workspace]] = await db.execute('SELECT version, storage_version FROM projectlog_workspaces WHERE uid = ?', [uid]);
   if (!workspace || workspace.storage_version !== 1) {
     throw Object.assign(new Error('Run scripts/migrate-records.js before loading this workspace'), { status: 503 });
   }
   const [projectRows] = await db.execute('SELECT * FROM projects WHERE user_id = ? ORDER BY sort_order', [uid]);
-  const [nodeRows] = await db.execute(`SELECT n.* FROM nodes n JOIN projects p ON p.id = n.project_id
-    WHERE p.user_id = ? ORDER BY n.sort_order`, [uid]);
-  const [revisionRows] = await db.execute(`SELECT r.* FROM node_revisions r JOIN nodes n ON n.id = r.node_id
-    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ORDER BY r.version`, [uid]);
-  const [fileRows] = await db.execute(`SELECT f.* FROM node_files f JOIN nodes n ON n.id = f.node_id
-    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ORDER BY f.sort_order`, [uid]);
-  const [feedbackRows] = await db.execute(`SELECT f.* FROM feedbacks f JOIN nodes n ON n.id = f.node_id
-    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ORDER BY f.sort_order`, [uid]);
-  const [actions] = await db.execute(`SELECT a.* FROM feedback_actions a JOIN nodes n ON n.id = a.node_id
-    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ORDER BY a.created_at, a.id`, [uid]);
-  const [todoRows] = await db.execute(`SELECT t.*, f.public_id, f.node_id, n.project_id AS source_project_id
+  const projectCondition = options.projectId ? ' AND p.id = ?' : '';
+  const nodeParams = options.projectId ? [uid, options.projectId] : [uid];
+  const [nodeRows] = options.nodes === false ? [[]] : await db.execute(`SELECT n.* FROM nodes n JOIN projects p ON p.id = n.project_id
+    WHERE p.user_id = ? ${projectCondition} ORDER BY n.sort_order`, nodeParams);
+  const [revisionRows] = !nodeRows.length ? [[]] : await db.execute(`SELECT r.* FROM node_revisions r JOIN nodes n ON n.id = r.node_id
+    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ${projectCondition}
+    ${options.history === false ? 'AND NOT EXISTS (SELECT 1 FROM node_revisions newer WHERE newer.node_id=r.node_id AND newer.version>r.version)' : ''}
+    ORDER BY r.version`, nodeParams);
+  const [fileRows] = !nodeRows.length ? [[]] : await db.execute(`SELECT f.* FROM node_files f JOIN nodes n ON n.id = f.node_id
+    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ${projectCondition} ORDER BY f.sort_order`, nodeParams);
+  const [feedbackRows] = !nodeRows.length ? [[]] : await db.execute(`SELECT f.* FROM feedbacks f JOIN nodes n ON n.id = f.node_id
+    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ${projectCondition} ORDER BY f.sort_order`, nodeParams);
+  const [actions] = !nodeRows.length ? [[]] : await db.execute(`SELECT a.* FROM feedback_actions a JOIN nodes n ON n.id = a.node_id
+    JOIN projects p ON p.id = n.project_id WHERE p.user_id = ? ${projectCondition} ORDER BY a.created_at, a.id`, nodeParams);
+  const [todoRows] = options.todos === false ? [[]] : await db.execute(`SELECT t.*, f.public_id, f.node_id, n.project_id AS source_project_id
     FROM todos t LEFT JOIN feedbacks f ON f.id = t.feedback_id LEFT JOIN nodes n ON n.id = f.node_id
     WHERE t.user_id = ? ORDER BY t.sort_order`, [uid]);
-  const [alertRows] = await db.execute('SELECT alert_key FROM alerts WHERE user_id = ? AND is_read = TRUE', [uid]);
+  const [alertRows] = options.alerts === false ? [[]] : await db.execute('SELECT alert_key FROM alerts WHERE user_id = ? AND is_read = TRUE', [uid]);
+  const nodeById = new Map(nodeRows.map(row => [row.id, row]));
+  const previousFeedbackByNode = new Map(feedbackRows.filter(row => row.next_node_id).map(row => [row.next_node_id, row]));
   const feedbackById = new Map(feedbackRows.map(row => [row.id, row]));
   const revisions = Object.groupBy(revisionRows, row => row.node_id);
   const revisionById = new Map(revisionRows.map(row => [row.id, row]));
@@ -95,7 +101,7 @@ async function readWorkspaceRows(db, uid) {
           regeneratedFrom: feedbackById.get(item.regenerated_from)?.public_id, nextNodeId: item.next_node_id || undefined,
           highlights: json(item.highlights), underlines: json(item.underlines), action: history.at(-1), actions: history };
       });
-      const previous = feedbackRows.find(item => item.next_node_id === row.id);
+      const previous = previousFeedbackByNode.get(row.id);
       return { id: row.id, projectId: row.project_id, parentNodeId: row.parent_node_id || null,
         title: row.title, type: row.type, note: row.content, status: row.status, errorStatus: row.error_status,
         issueType: row.issue_type, date: dateOnly(row.work_date), action: row.action_content, result: row.result_content,
@@ -109,7 +115,7 @@ async function readWorkspaceRows(db, uid) {
           files: (files[row.id] || []).filter(file => !file.revision_id || revisionById.get(file.revision_id)?.version <= item.version)
             .map(file => ({ id: file.stored_name, name: file.original_name, type: file.file_type })) })),
         feedback, pinnedFeedbackId: (feedbacks[row.id] || []).find(item => item.pinned)?.public_id || null,
-        ...(previous ? { previousFeedback: { projectId: nodeRows.find(node => node.id === previous.node_id).project_id,
+        ...(previous ? { previousFeedback: { projectId: nodeById.get(previous.node_id).project_id,
           nodeId: previous.node_id, feedbackId: previous.public_id } } : {}) };
     }),
     todos: todoRows.map(row => ({ id: row.id, projectId: row.project_id || '', title: row.title, description: row.description,
@@ -117,14 +123,14 @@ async function readWorkspaceRows(db, uid) {
       ...(row.feedback_id ? { feedbackSource: { projectId: row.source_project_id, nodeId: row.node_id, feedbackId: row.public_id } } : {}) })),
     readAlerts: alertRows.map(row => row.alert_key)
   };
-  return { uid, version: workspace.version, records };
+  return { uid, version: workspace.version, records, readOnly: Boolean(options.readOnly), scope: options.scope, projectId: options.projectId };
 }
 
-async function loadWorkspace(pool, uid) {
+async function loadWorkspace(pool, uid, options = {}) {
   const db = await pool.getConnection();
   try {
     await db.beginTransaction();
-    const workspace = await readWorkspaceRows(db, uid);
+    const workspace = await readWorkspaceRows(db, uid, options);
     await db.commit();
     return workspace;
   } catch (error) { await db.rollback(); throw error; }
@@ -163,16 +169,30 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
   const oldProjects = new Map(previous.projects.map(item => [item.id, item]));
   const oldNodes = new Map(previous.nodes.map(item => [item.id, item]));
   const oldTodos = new Map(previous.todos.map(item => [item.id, item]));
+  const oldProjectOrder = new Map(previous.projects.map((item, index) => [item.id, index]));
+  const oldNodeOrder = new Map(previous.nodes.map((item, index) => [item.id, index]));
+  const oldTodoOrder = new Map(previous.todos.map((item, index) => [item.id, index]));
+  const nextNodeOrder = new Map(records.nodes.map((item, index) => [item.id, index]));
+  const changedNodes = records.nodes.filter((node, index) =>
+    oldNodeOrder.get(node.id) !== index || !same(oldNodes.get(node.id), node));
+  const feedbackIds = new Map();
+  for (const node of records.nodes) {
+    for (const [index, item] of (node.feedback || []).entries()) {
+      feedbackIds.set(node.id + ':' + publicFeedbackId(node, item, index), feedbackRowId(node, item, index));
+    }
+  }
   const event = async (type, description, projectId = null, nodeId = null, progress = null, todoId = null) => db.execute(`INSERT INTO activity_logs
     (user_id, project_id, node_id, todo_id, activity_type, description, progress) VALUES (?, ?, ?, ?, ?, ?, ?)`, [uid, projectId, nodeId, todoId, type, description, progress]);
   for (const [index, project] of records.projects.entries()) {
+    if (oldProjectOrder.get(project.id) === index && same(oldProjects.get(project.id), project)) continue;
     await upsert(db, 'projects', { id: project.id, user_id: uid, title: project.name || '', description: project.summary || '',
       technologies: project.tech || '', status: project.progress >= 100 ? 'complete' : 'work', progress: project.progress || 0,
       color: project.color || '#007fff', category: project.category || 'development', icon: project.icon || 'file',
       started_at: dateOnly(project.startedDate), completed_at: dateOnly(project.completedDate), deadline: dateOnly(project.deadline), sort_order: index });
     if (!same(oldProjects.get(project.id), project)) await event(oldProjects.has(project.id) ? 'project_updated' : 'project_created', project.name || '', project.id, null, project.progress || 0);
   }
-  for (const [index, node] of records.nodes.entries()) {
+  for (const node of changedNodes) {
+    const index = nextNodeOrder.get(node.id);
     await upsert(db, 'nodes', { id: node.id, project_id: node.projectId, parent_node_id: null, title: node.title || '',
       type: node.type || 'work', content: node.note || '', status: node.status === 'complete' ? 'complete' : 'work',
       error_status: node.errorStatus ?? (['issue', 'resolved'].includes(node.status) ? node.status : ''), issue_type: node.issueType || '',
@@ -183,7 +203,10 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
     const revisionState = item => ({ title: item?.title || '', note: item?.note || '', code: item?.revision?.code || '',
       github: item?.revision?.github || '', link: item?.revision?.link || '', codeAi: Boolean(item?.revision?.codeAi),
       files: (item?.revision?.files || []).map(file => file.id) });
-    let [[latest]] = await db.execute('SELECT id, version FROM node_revisions WHERE node_id = ? ORDER BY version DESC LIMIT 1', [node.id]);
+    let latest = before?.revision;
+    if (!latest?.id) {
+      [[latest]] = await db.execute('SELECT id, version FROM node_revisions WHERE node_id = ? ORDER BY version DESC LIMIT 1', [node.id]);
+    }
     if (!latest || !same(revisionState(before), revisionState(node))) {
       latest = { id: randomUUID(), version: (latest?.version || 0) + 1 };
       await db.execute(`INSERT INTO node_revisions (id, node_id, version, content, github, related_link, code_ai, snapshot_title, snapshot_content)
@@ -191,20 +214,26 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
         node.revision?.github || '', node.revision?.link || '', Boolean(node.revision?.codeAi), node.title || '', node.note || '']);
       await event(before ? 'node_updated' : 'node_created', node.title || '', node.projectId, node.id);
     }
+    const oldFiles = new Map((before?.revision?.files || []).map((file, index) => [file.id, { file, index }]));
     for (const [order, file] of (node.revision?.files || []).entries()) {
+      const old = oldFiles.get(file.id);
+      if (old?.index === order && same(old.file, file)) continue;
       await upsert(db, 'node_files', { id: stableId('file', node.id, file.id), node_id: node.id, revision_id: latest.id,
         original_name: file.name, stored_name: file.id, file_path: file.id, file_type: file.type, file_size: file.size || 0, sort_order: order },
       ['original_name', 'file_size', 'sort_order']);
     }
   }
-  const feedbackIds = new Map();
-  for (const node of records.nodes) {
+  for (const node of changedNodes) {
     await db.execute('UPDATE nodes SET parent_node_id = ? WHERE id = ?', [node.parentNodeId || node.previousFeedback?.nodeId || null, node.id]);
-    const oldFeedback = new Map((oldNodes.get(node.id)?.feedback || []).map((item, index) => [publicFeedbackId(oldNodes.get(node.id), item, index), item]));
+    const before = oldNodes.get(node.id);
+    const oldFeedback = new Map((before?.feedback || []).map((item, index) => [publicFeedbackId(before, item, index), item]));
+    const oldFeedbackOrder = new Map((before?.feedback || []).map((item, index) => [publicFeedbackId(before, item, index), index]));
     for (const [index, item] of (node.feedback || []).entries()) {
       const key = publicFeedbackId(node, item, index);
       const id = feedbackRowId(node, item, index);
-      feedbackIds.set(node.id + ':' + key, id);
+      const old = oldFeedback.get(key);
+      const oldIndex = oldFeedbackOrder.get(key);
+      if (oldIndex === index && same(old, item) && (before?.pinnedFeedbackId === key) === (node.pinnedFeedbackId === key)) continue;
       await upsert(db, 'feedbacks', { id, node_id: node.id, public_id: key, is_legacy: !item.id,
         mode: item.mode || '', style: item.style || item.tone || '', request_content: item.request || '', content: item.text || '',
         selected: Boolean(item.adoptedAt || item.selected), adopted_at: timestamp(item.adoptedAt), pinned: node.pinnedFeedbackId === key,
@@ -222,8 +251,12 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
       }
     }
   }
-  for (const node of records.nodes) {
+  for (const node of changedNodes) {
+    const before = oldNodes.get(node.id);
+    const oldFeedback = new Map((before?.feedback || []).map((item, index) => [publicFeedbackId(before, item, index), item]));
     for (const [index, item] of (node.feedback || []).entries()) {
+      const old = oldFeedback.get(publicFeedbackId(node, item, index));
+      if (old && old.regeneratedFrom === item.regeneratedFrom && old.nextNodeId === item.nextNodeId) continue;
       const id = feedbackRowId(node, item, index);
       const regenerated = item.regeneratedFrom && feedbackIds.get(node.id + ':' + item.regeneratedFrom);
       await db.execute('UPDATE feedbacks SET regenerated_from = ?, next_node_id = ? WHERE id = ?',
@@ -231,8 +264,13 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
     }
   }
   for (const [index, todo] of records.todos.entries()) {
+    if (oldTodoOrder.get(todo.id) === index && same(oldTodos.get(todo.id), todo)) continue;
     const source = todo.feedbackSource;
-    const feedbackId = source && feedbackIds.get(source.nodeId + ':' + source.feedbackId);
+    let feedbackId = source && feedbackIds.get(source.nodeId + ':' + source.feedbackId);
+    // Todo-only requests retain a previously verified feedback link without loading every node.
+    if (source && !feedbackId && !records.nodes.length && same(source, oldTodos.get(todo.id)?.feedbackSource)) {
+      feedbackId = stableId('feedback', source.nodeId, source.feedbackId);
+    }
     if (todo.projectId && !projectIds.has(todo.projectId)) throw new Error('Todo references missing project');
     await upsert(db, 'todos', { id: todo.id, user_id: uid, project_id: todo.projectId || null, feedback_id: feedbackId || null,
       title: todo.title, description: todo.description || '', status: todo.done ? 'complete' : 'pending', due_date: dateOnly(todo.dueDate),
@@ -250,24 +288,50 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
       if (!keep.has(id)) await db.execute('DELETE FROM feedbacks WHERE id = ?', [id]);
     }
   }
-  for (const old of previous.todos) if (!records.todos.some(item => item.id === old.id)) await db.execute('DELETE FROM todos WHERE id = ? AND user_id = ?', [old.id, uid]);
+  const todoIds = new Set(records.todos.map(item => item.id));
+  for (const old of previous.todos) if (!todoIds.has(old.id)) await db.execute('DELETE FROM todos WHERE id = ? AND user_id = ?', [old.id, uid]);
   for (const old of previous.projects) if (!projectIds.has(old.id)) await db.execute('DELETE FROM projects WHERE id = ? AND user_id = ?', [old.id, uid]);
   const read = new Set(records.readAlerts);
+  const oldRead = new Set(previous.readAlerts);
   for (const node of records.nodes) {
+    const before = oldNodes.get(node.id);
+    const oldFeedback = new Set((before?.feedback || []).map((item, index) => feedbackRowId(before, item, index)));
     const items = (node.feedback || []).map((item, index) => ({
       key: 'feedback-' + node.id + '-' + (item.id || publicFeedbackId(node, item, index).slice('legacy-'.length)),
       feedbackId: feedbackRowId(node, item, index), type: 'feedback', message: node.title || '', createdAt: timestamp(item.createdAt)
     }));
     if (node.errorStatus || ['issue', 'resolved'].includes(node.status)) items.push({ key: 'issue-' + node.id, type: 'issues', message: node.title || '' });
-    else await db.execute('DELETE FROM alerts WHERE user_id = ? AND alert_key = ?', [uid, 'issue-' + node.id]);
-    for (const item of items) await upsert(db, 'alerts', { user_id: uid, alert_key: item.key, node_id: node.id,
+    else if (before?.errorStatus || ['issue', 'resolved'].includes(before?.status)) {
+      await db.execute('DELETE FROM alerts WHERE user_id = ? AND alert_key = ?', [uid, 'issue-' + node.id]);
+    }
+    for (const item of items) {
+      const existed = item.type === 'feedback' ? oldFeedback.has(item.feedbackId)
+        : Boolean(before?.errorStatus || ['issue', 'resolved'].includes(before?.status));
+      if (existed && before.title === node.title && oldRead.has(item.key) === read.has(item.key)) continue;
+      await upsert(db, 'alerts', { user_id: uid, alert_key: item.key, node_id: node.id,
       feedback_id: item.feedbackId || null, type: item.type, message: item.message, is_read: read.has(item.key),
       created_at: item.createdAt || new Date(node.date + 'T00:00:00Z') }, ['message', 'is_read']);
+    }
   }
   if (migration) await db.execute('UPDATE projectlog_workspaces SET storage_version = 1 WHERE uid = ?', [uid]);
 }
 
 async function saveWorkspace(pool, current, records) {
+  if (current.readOnly) throw new Error('Cannot save a partial read-only workspace');
+  if (current.scope === 'todos' && (records.nodes.length || !same(records.projects, current.records.projects)
+      || !same(records.readAlerts, current.records.readAlerts))) {
+    throw new Error('A Todo workspace can only modify Todos');
+  }
+  if (current.scope === 'projects' && (records.nodes.length || records.todos.length || records.readAlerts.length)) {
+    throw new Error('A project creation workspace can only modify projects');
+  }
+  if (current.scope === 'project') {
+    const otherProjects = list => list.filter(project => project.id !== current.projectId);
+    if (records.nodes.some(node => node.projectId !== current.projectId)
+        || !same(otherProjects(records.projects), otherProjects(current.records.projects))) {
+      throw new Error('A project workspace cannot modify another project');
+    }
+  }
   const db = await pool.getConnection();
   try {
     await db.beginTransaction();

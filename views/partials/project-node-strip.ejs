@@ -1,0 +1,25 @@
+<div class="node-strip" aria-label="작업 노드">
+  <% for (const node of records) {
+    const images = (node.revision?.files || []).filter(file => file.type.startsWith('image/'));
+    const nodeLink = '/projects/' + project.id + '#node-' + node.id;
+    const tone = node.ai?.title ? 'ai-tone' : '';
+  %>
+    <div class="node-lane">
+      <% if (images.length) { %>
+        <article class="node-card node-card-image <%= tone %>" id="peek-<%= node.id %>">
+          <%- include('project-image-gallery', { node, images }) %>
+          <a class="node-card-meta" href="<%= nodeLink %>" aria-label="<%= node.title %> 노드 자세히 보기">
+            <% if (!images.some(file => file.name === node.title)) { %><strong><%= node.title %></strong><% } %>
+            <time datetime="<%= node.date %>"><%= shortDate(node.date) %></time><%- include('status', { node }) %>
+          </a>
+        </article>
+      <% } else { %>
+        <a class="node-card <%= tone %>" id="peek-<%= node.id %>" href="<%= nodeLink %>">
+          <time datetime="<%= node.date %>"><%= shortDate(node.date) %></time><strong><%= node.title %></strong><%- include('status', { node }) %>
+        </a>
+      <% } %>
+      <%- include('feedback-branch', { node, fromList: true }) %>
+    </div>
+  <% } %>
+  <a class="node-add" href="/projects/<%= project.id %>/nodes/new" aria-label="<%= project.name %> 노드 추가" title="노드 추가"><span aria-hidden="true">+</span></a>
+</div>

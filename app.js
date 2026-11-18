@@ -8,7 +8,7 @@ const { buildCalendar, validAnchor } = require('./calendar');
 const { readDashboardDefault } = require('./services/dashboard-default');
 const { currentVersion, listUpdates } = require('./services/updates');
 const { pool, ready } = require('./services/mysql');
-const { userStatistics, dashboardActivity } = require('./services/workspace-statistics');
+const { userStatistics, dashboardActivity, dashboardSummary } = require('./services/workspace-statistics');
 
 const { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
   shortDate, defaultColor, validColor, completionDate, completionTime,
@@ -37,11 +37,11 @@ app.use(async (req, res, next) => {
 });
 app.use(sharedPortfolio);
 app.use(requireAccount);
-app.use(useWorkspace);
 app.get('/statistics', async (req, res) => {
   if (!pool) return res.status(503).json({ error: '통계는 MySQL 모드에서 사용할 수 있어요.' });
   res.json(await userStatistics(await ready(), req.user.uid));
 });
+app.use(useWorkspace);
 
 Object.assign(app.locals, { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
   shortDate, defaultColor, validColor, completionDate, completionTime,
@@ -95,7 +95,7 @@ app.post('/notifications/:alertId/read', async (req, res, next) => {
 app.get('/', async (req, res) => {
   const dashboardDefault = await readDashboardDefault();
   const today = seoulDate.format(new Date());
-  const statistics = pool ? await userStatistics(await ready(), req.user.uid) : null;
+  const statistics = pool ? await dashboardSummary(await ready(), req.user.uid) : null;
   const activityRows = pool ? await dashboardActivity(await ready(), req.user.uid) : null;
   const nodeById = new Map(nodes.map(node => [node.id, node]));
   const flowNodes = activityRows ? activityRows.flowNodeIds.map(id => nodeById.get(id)).filter(Boolean) : nodes;

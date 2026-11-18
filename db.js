@@ -26,13 +26,34 @@ const nodes = recordsFor('nodes');
 const todos = recordsFor('todos');
 const readAlerts = recordsFor('readAlerts');
 
-async function readWorkspace(uid) {
+async function readWorkspace(uid, options) {
   const connection = await ready();
-  return loadWorkspace(connection, uid);
+  return loadWorkspace(connection, uid, options);
 }
 
 async function useWorkspace(req, res, next) {
-  workspace.run(await readWorkspace(req.user.uid), next);
+  let options;
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    options = { readOnly: true, history: req.path.endsWith('/revisions') };
+    if (req.path === '/projects' || req.path === '/todos' || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
+      options.nodes = false;
+      options.alerts = false;
+      options.todos = req.path === '/todos';
+    }
+    const projectPath = /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
+    if (projectPath) options.projectId = projectPath[1];
+    const strip = /^\/projects\/([^/]+)\/strip$/.exec(req.path);
+    if (strip) Object.assign(options, { projectId: strip[1], todos: false, alerts: false });
+  }
+  if (req.method === 'POST' && /^\/todos(?:\/|$)/.test(req.path)) {
+    options = { nodes: false, alerts: false, scope: 'todos' };
+  }
+  if (req.method === 'POST' && req.path === '/projects') {
+    options = { nodes: false, todos: false, alerts: false, scope: 'projects' };
+  }
+  const projectWrite = req.method === 'POST' && /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
+  if (projectWrite) options = { projectId: projectWrite[1], history: false, scope: 'project' };
+  workspace.run(await readWorkspace(req.user.uid, options), next);
 }
 
 async function refreshWorkspace() {

@@ -19,6 +19,7 @@ test('relational migration and application flows', { skip: !url }, async t => {
   process.env.PROJECT_LOG_DATA_FILE = path.join(folder, 'workspace.json');
   process.env.PROJECT_LOG_PORTFOLIO_UPLOADS = path.join(folder, 'portfolio');
   let requests = 0;
+  let requestGate;
   let apiFailure = false;
   let saveFailure = false;
   const workspaceStore = require('../services/workspace-store');
@@ -29,6 +30,7 @@ test('relational migration and application flows', { skip: !url }, async t => {
   };
   require.cache[require.resolve('../services/openai')] = { exports: { responses: {
     create: async () => {
+      if (requestGate) await requestGate;
       if (apiFailure) throw Object.assign(new Error('test API unavailable'), { status: 429, code: 'insufficient_quota' });
       return { status: 'completed', output_text: '## 확인\n테스트 분석 ' + ++requests,
         usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
@@ -151,6 +153,31 @@ test('relational migration and application flows', { skip: !url }, async t => {
       response = await form('/projects/' + projectId + '/nodes/' + extra.id + '/delete', {}, cookie);
       assert.equal(response.status, 303);
       assert.equal((await sql('SELECT * FROM node_revisions WHERE node_id=?', [extra.id])).length, 0);
+      response = await form(feedbackUrl + '/todo', { title: '피드백 연결 Todo' }, cookie);
+      assert.equal(response.status, 303);
+      const [linkedTodo] = await sql('SELECT id, feedback_id FROM todos WHERE user_id=10000 AND title=?', ['피드백 연결 Todo']);
+      assert.ok(linkedTodo.feedback_id);
+      response = await form('/todos/' + linkedTodo.id + '/done', {}, cookie);
+      assert.equal(response.status, 303);
+      assert.equal((await sql('SELECT feedback_id FROM todos WHERE id=?', [linkedTodo.id]))[0].feedback_id, linkedTodo.feedback_id);
+
+    });
+    await t.test('scoped project writes preserve records in another project', async () => {
+      let response = await form('/projects', { name: 'Other Project', color: '#007fff', category: 'development', icon: 'folder' }, cookie);
+      const otherProject = response.headers.get('location').split('/').at(-1);
+      response = await form('/projects/' + otherProject + '/nodes/new', {
+        title: 'Preserved Node', date: '2026-11-18', status: 'work', code: 'preserve this code'
+      }, cookie);
+      assert.equal(response.status, 302);
+      const [otherNode] = await sql('SELECT * FROM nodes WHERE project_id=?', [otherProject]);
+      const [otherRevision] = await sql('SELECT * FROM node_revisions WHERE node_id=?', [otherNode.id]);
+      response = await form('/projects/' + projectId + '/color', { color: '#ff7700' }, cookie);
+      assert.equal(response.status, 303);
+      assert.deepEqual((await sql('SELECT * FROM nodes WHERE id=?', [otherNode.id]))[0], otherNode);
+      assert.deepEqual((await sql('SELECT * FROM node_revisions WHERE node_id=?', [otherNode.id]))[0], otherRevision);
+      response = await form('/projects/' + otherProject + '/delete', {}, cookie);
+      assert.equal(response.status, 303);
+      assert.equal((await sql('SELECT * FROM nodes WHERE id=?', [nodeId])).length, 1);
     });
     await t.test('portfolio project FK, resource categories and analysis', async () => {
       let response = await form('/portfolio', { title: 'Linked Portfolio', description: 'test', projectId, visibility: 'private' }, cookie);
@@ -161,6 +188,31 @@ test('relational migration and application flows', { skip: !url }, async t => {
       assert.equal((await sql('SELECT * FROM portfolio_analyses WHERE portfolio_id=?', [portfolioId])).length, 1);
       const orphan = await pool.execute('INSERT INTO nodes (id,project_id,title,content,work_date,action_content,result_content,sort_order) VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), randomUUID(), 'bad', '', '2026-11-18', '', '', 0]).then(() => null, error => error);
       assert.equal(orphan.code, 'ER_NO_REFERENCED_ROW_2');
+    });
+    await t.test('changing a Portfolio link does not replace unrelated files or technologies', async () => {
+      const store = require('../services/portfolio-store');
+      const item = await store.get(10000, portfolioId);
+      const statements = [];
+      const getConnection = pool.getConnection;
+      pool.getConnection = async function () {
+        const connection = await getConnection.call(this);
+        const execute = connection.execute;
+        const query = connection.query;
+        const release = connection.release;
+        connection.execute = function (sql, ...args) { statements.push(sql); return execute.call(this, sql, ...args); };
+        connection.query = function (sql, ...args) { statements.push(sql); return query.call(this, sql, ...args); };
+        connection.release = function () {
+          this.execute = execute; this.query = query; this.release = release;
+          return release.call(this);
+        };
+        return connection;
+      };
+      try {
+        await store.save(10000, { ...item, github: 'https://github.com/soobin988/ProjectLog' }, 0);
+      } finally { pool.getConnection = getConnection; }
+      assert.ok(!statements.some(sql => /DELETE FROM portfolio_(files|technologies|links)/.test(sql)));
+      assert.ok(!statements.some(sql => /INSERT INTO portfolio_(files|technologies)/.test(sql)));
+      assert.equal((await store.get(10000, portfolioId)).github, 'https://github.com/soobin988/ProjectLog');
     });
     await t.test('other members cannot read or mutate nodes, files, feedback, actions, Todos or Portfolios', async () => {
       const nodeUrl = '/projects/' + projectId + '/nodes/' + nodeId;
@@ -181,19 +233,72 @@ test('relational migration and application flows', { skip: !url }, async t => {
       const privateShare = await fetch(base + '/portfolio/shared/' + portfolioId);
       assert.equal(privateShare.status, 404);
     });
+    await t.test('feedback reservations prevent duplicate billing and saved responses can be replayed', async () => {
+      const route = '/projects/' + projectId + '/nodes/' + nodeId + '/feedback';
+      const requestId = randomUUID();
+      const body = { style: 'mentor', request: '중복 요청 확인', requestId };
+      const before = requests;
+      let release;
+      requestGate = new Promise(resolve => { release = resolve; });
+      let pending;
+      try {
+        pending = form(route, body, cookie);
+        for (let attempt = 0; attempt < 200; attempt++) {
+          const rows = await sql('SELECT status FROM projectlog_feedback_requests WHERE user_id=10000 AND request_id=?', [requestId]);
+          if (rows[0]?.status === 'generating') break;
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        const duplicate = await form(route, { ...body, requestId: randomUUID() }, cookie);
+        assert.equal(duplicate.status, 409);
+      } finally {
+        release();
+        requestGate = undefined;
+      }
+      const first = await pending;
+      assert.equal(first.status, 303, await first.text());
+      const replay = await form(route, body, cookie);
+      assert.equal(replay.status, 303, await replay.text());
+      assert.equal(replay.headers.get('location'), first.headers.get('location'));
+      assert.equal(requests, before + 1);
+      const [savedRequest] = await sql('SELECT status, payload FROM projectlog_feedback_requests WHERE user_id=10000 AND request_id=?', [requestId]);
+      assert.equal(savedRequest.status, 'saved');
+      assert.equal(savedRequest.payload, null, 'Completed answers should not be duplicated in request storage');
+      const changed = await form(route, { ...body, request: '다른 요청' }, cookie);
+      assert.equal(changed.status, 409);
+      assert.equal((await sql('SELECT COUNT(*) AS count FROM feedbacks WHERE public_id=?', [requestId]))[0].count, 1);
+    });
+    await t.test('project strips load separately and reject another member', async () => {
+      const list = await fetch(base + '/projects', { headers: { Cookie: cookie } });
+      const html = await list.text();
+      assert.equal(list.status, 200);
+      assert.ok(html.includes('data-strip-url='));
+      assert.ok(!html.includes('id="peek-' + nodeId + '"'));
+      const strip = await fetch(base + '/projects/' + projectId + '/strip', { headers: { Cookie: cookie } });
+      assert.equal(strip.status, 200);
+      assert.ok((await strip.text()).includes('peek-' + nodeId));
+      const blocked = await fetch(base + '/projects/' + projectId + '/strip', { headers: { Cookie: secondCookie } });
+      assert.equal(blocked.status, 404);
+    });
     await t.test('API errors and storage errors do not save partial feedback or stop the server', async () => {
       const before = (await sql('SELECT COUNT(*) AS count FROM feedbacks'))[0].count;
       const route = '/projects/' + projectId + '/nodes/' + nodeId + '/feedback';
+      const recoveryId = randomUUID();
+      const recoveryBody = { style: 'mentor', request: '저장 실패 확인', requestId: recoveryId };
       try {
         apiFailure = true;
         let response = await form(route, { style: 'mentor', request: '실패 확인' }, cookie);
         assert.equal(response.status, 502);
         apiFailure = false;
         saveFailure = true;
-        response = await form(route, { style: 'mentor', request: '저장 실패 확인' }, cookie);
+        response = await form(route, recoveryBody, cookie);
         assert.equal(response.status, 503);
       } finally { apiFailure = false; saveFailure = false; }
       assert.equal((await sql('SELECT COUNT(*) AS count FROM feedbacks'))[0].count, before);
+      const calls = requests;
+      const recovered = await form(route, recoveryBody, cookie);
+      assert.equal(recovered.status, 303, await recovered.text());
+      assert.equal(requests, calls, 'Saving a retained answer must not call OpenAI again');
+      assert.equal((await sql('SELECT COUNT(*) AS count FROM feedbacks'))[0].count, before + 1);
       const health = await fetch(base + '/projects', { headers: { Cookie: cookie } });
       assert.equal(health.status, 200);
     });

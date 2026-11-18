@@ -15,6 +15,10 @@
     <section class="panel form-panel">
       <% if (error || !configured) { %><p class="error" role="alert"><%= error || 'AI 요청을 사용하려면 서버에 OPENAI_API_KEY를 설정하세요.' %></p><% } %>
       <form method="post" data-feedback-form>
+        <input type="hidden" name="requestId" value="<%= draft.requestId %>">
+        <div data-feedback-recovery <%= recoveredText ? '' : 'hidden' %>>
+          <label>생성된 답변<textarea rows="10" readonly data-recovered-text><%= recoveredText %></textarea></label>
+        </div>
         <label>답변 성격<select name="style" required><% for (const [mode, label] of Object.entries(styles)) { %><option value="<%= mode %>" <%= mode === draft.mode ? 'selected' : '' %>><%= label %></option><% } %></select></label>
         <label>요청 내용<textarea name="request" rows="6" maxlength="3000" placeholder="예. 이 오류가 재발하지 않도록 확인할 항목을 알려줘." required><%= draft.request %></textarea></label>
         <p class="muted">요청 내용과 이 노드의 작업 기록 및 첨부 코드를 OpenAI로 전송합니다.<% if (imageCount) { %> 첨부 이미지 <%= imageCount %>장도 함께 전송합니다.<% } %><% if (archiveCount) { %> 첨부 ZIP <%= archiveCount %>개도 검토를 위해 전송합니다.<% } %></p>

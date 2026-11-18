@@ -41,6 +41,9 @@ function renderProjects(req, res, { creating = req.query.new === '1', error = ''
 }
 
 router.get('/projects', (req, res) => renderProjects(req, res));
+router.get(base + '/strip', (req, res) => {
+  res.render('partials/project-node-strip', { project: req.project, records: projectNodes(req.project.id).reverse() });
+});
 
 function projectFields(req, project) {
   const category = req.body?.category === undefined ? categoryFor(project || {}) : value(req, 'category');

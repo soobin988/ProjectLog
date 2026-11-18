@@ -1,20 +1,22 @@
 async function projectStatistics(db, uid, projectId = null) {
-  const [rows] = await db.execute(`SELECT p.id, p.title, p.progress, p.status,
+  const [rows] = await db.execute(`WITH scoped_projects AS (
+    SELECT * FROM projects WHERE user_id=? ${projectId ? 'AND id=?' : ''}
+  ) SELECT p.id, p.title, p.progress, p.status,
     COALESCE(n.node_count,0) AS nodeCount, COALESCE(n.issue_count,0) AS issueCount,
     COALESCE(n.resolved_count,0) AS resolvedCount, COALESCE(f.feedback_count,0) AS feedbackCount,
     COALESCE(f.selected_count,0) AS selectedFeedbackCount, COALESCE(a.action_count,0) AS actionCount,
     COALESCE(a.success_count,0) AS actionSuccessCount, COALESCE(a.failed_count,0) AS actionFailedCount,
     COALESCE(a.pending_count,0) AS actionPendingCount, COALESCE(t.todo_count,0) AS todoCount
-    FROM projects p
+    FROM scoped_projects p
     LEFT JOIN (SELECT project_id, COUNT(*) AS node_count, SUM(error_status <> '') AS issue_count,
-      SUM(error_status='resolved') AS resolved_count FROM nodes GROUP BY project_id) n ON n.project_id=p.id
+      SUM(error_status='resolved') AS resolved_count FROM nodes JOIN scoped_projects sp ON sp.id=nodes.project_id GROUP BY project_id) n ON n.project_id=p.id
     LEFT JOIN (SELECT n.project_id, COUNT(*) AS feedback_count, SUM(f.selected) AS selected_count
-      FROM feedbacks f JOIN nodes n ON n.id=f.node_id GROUP BY n.project_id) f ON f.project_id=p.id
+      FROM feedbacks f JOIN nodes n ON n.id=f.node_id JOIN scoped_projects sp ON sp.id=n.project_id GROUP BY n.project_id) f ON f.project_id=p.id
     LEFT JOIN (SELECT n.project_id, COUNT(*) AS action_count, SUM(a.result='success') AS success_count,
       SUM(a.result='failed') AS failed_count, SUM(a.result='pending') AS pending_count
-      FROM feedback_actions a JOIN nodes n ON n.id=a.node_id GROUP BY n.project_id) a ON a.project_id=p.id
-    LEFT JOIN (SELECT project_id, COUNT(*) AS todo_count FROM todos GROUP BY project_id) t ON t.project_id=p.id
-    WHERE p.user_id=? ${projectId ? 'AND p.id=?' : ''} ORDER BY p.sort_order`, projectId ? [uid, projectId] : [uid]);
+      FROM feedback_actions a JOIN nodes n ON n.id=a.node_id JOIN scoped_projects sp ON sp.id=n.project_id GROUP BY n.project_id) a ON a.project_id=p.id
+    LEFT JOIN (SELECT project_id, COUNT(*) AS todo_count FROM todos JOIN scoped_projects sp ON sp.id=todos.project_id GROUP BY project_id) t ON t.project_id=p.id
+    ORDER BY p.sort_order`, projectId ? [uid, projectId] : [uid]);
   return rows.map(row => {
     for (const key of Object.keys(row)) if (key.endsWith('Count')) row[key] = Number(row[key]);
     const rate = (part, total) => total ? Math.round(part / total * 1000) / 10 : 0;
@@ -22,6 +24,13 @@ async function projectStatistics(db, uid, projectId = null) {
       issueResolutionRate: rate(row.resolvedCount, row.issueCount),
       actionSuccessRate: rate(row.actionSuccessCount, row.actionSuccessCount + row.actionFailedCount) };
   });
+}
+
+async function dashboardSummary(db, uid) {
+  const [[totals]] = await db.execute(`SELECT COUNT(*) AS activeProjectCount FROM projects WHERE user_id=? AND status='work'`, [uid]);
+  const [[issues]] = await db.execute(`SELECT COUNT(*) AS remainingIssueCount
+    FROM nodes n JOIN projects p ON p.id=n.project_id WHERE p.user_id=? AND n.error_status='issue'`, [uid]);
+  return { activeProjectCount: Number(totals.activeProjectCount), remainingIssueCount: Number(issues.remainingIssueCount) };
 }
 
 async function userStatistics(db, uid) {
@@ -61,4 +70,4 @@ async function dashboardActivity(db, uid) {
   return { recentNodeIds: recent.map(row => row.id), flowNodeIds: flow.map(row => row.id) };
 }
 
-module.exports = { projectStatistics, userStatistics, projectHistory, dashboardActivity };
+module.exports = { projectStatistics, userStatistics, projectHistory, dashboardActivity, dashboardSummary };

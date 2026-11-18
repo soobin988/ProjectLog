@@ -22,8 +22,8 @@ function updateLocal(update) {
   renameSync(localFile + '.tmp', localFile);
 }
 
-async function loadItems(where, params) {
-  const db = await portfolioDb();
+async function loadItems(where, params, connection) {
+  const db = connection || await portfolioDb();
   const [rows] = await db.execute(`SELECT p.*, covers.settings AS cover_settings, materials.settings AS material_settings,
     contacts.settings AS contact_settings
     FROM portfolios p
@@ -119,6 +119,8 @@ async function save(uid, item, generation) {
   try {
     await connection.beginTransaction();
     await lockMemberGeneration(connection, uid, generation);
+    const [previous] = item.version === undefined ? [] : await loadItems('p.user_id = ? AND p.id = ?', [uid, item.id], connection);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const fields = [item.projectId || null, item.title, item.description, item.role, item.status,
       item.startDate, item.endDate, item.isPublic];
     if (item.version === undefined) {
@@ -130,36 +132,52 @@ async function save(uid, item, generation) {
         role = ?, status = ?, start_date = ?, end_date = ?, is_public = ?, version = version + 1
         WHERE id = ? AND user_id = ? AND version = ?`, [...fields, item.id, uid, item.version]);
       if (!result.affectedRows) throw conflict();
-      for (const table of ['portfolio_technologies', 'portfolio_files', 'portfolio_links']) {
-        await connection.execute(`DELETE FROM ${table} WHERE portfolio_id = ?`, [item.id]);
-      }
+
     }
-    if (item.technologies.length) {
-      await connection.query('INSERT INTO portfolio_technologies (portfolio_id, technology) VALUES ?',
+    if (!same(previous?.technologies || [], item.technologies)) {
+      await connection.execute('DELETE FROM portfolio_technologies WHERE portfolio_id = ?', [item.id]);
+      if (item.technologies.length) await connection.query('INSERT INTO portfolio_technologies (portfolio_id, technology) VALUES ?',
         [item.technologies.map(technology => [item.id, technology])]);
     }
-    if (item.files.length) {
-      await connection.query(`INSERT INTO portfolio_files (id, portfolio_id, file_type, original_name, stored_name,
-        file_path, file_size, mime_type, caption, is_thumbnail, sort_order, created_at) VALUES ?`,
-      [item.files.map((file, index) => [file.id, item.id, file.type, file.name, file.id, file.path, file.size,
-        file.mime, file.caption, file.thumbnail, index, new Date(file.createdAt)])]);
+    const oldFiles = new Map((previous?.files || []).map((file, index) => [file.id, { file, index }]));
+    const fileIds = new Set(item.files.map(file => file.id));
+    for (const old of previous?.files || []) {
+      if (!fileIds.has(old.id)) await connection.execute('DELETE FROM portfolio_files WHERE portfolio_id = ? AND id = ?', [item.id, old.id]);
     }
-    const links = Object.entries({ ...item.links, github: item.github }).filter(([, url]) => url);
-    if (links.length) {
-      await connection.query('INSERT INTO portfolio_links (portfolio_id, link_type, url) VALUES ?',
-        [links.map(([type, url]) => [item.id, type, url])]);
+    for (const [index, file] of item.files.entries()) {
+      const old = oldFiles.get(file.id);
+      if (old?.index === index && same(old.file, file)) continue;
+      if (old) {
+        await connection.execute(`UPDATE portfolio_files SET file_type=?, original_name=?, file_size=?,
+          mime_type=?, caption=?, is_thumbnail=?, sort_order=? WHERE portfolio_id=? AND id=?`,
+        [file.type, file.name, file.size, file.mime, file.caption, file.thumbnail, index, item.id, file.id]);
+      } else {
+        await connection.execute(`INSERT INTO portfolio_files (id, portfolio_id, file_type, original_name, stored_name,
+          file_path, file_size, mime_type, caption, is_thumbnail, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [file.id, item.id, file.type, file.name, file.id, file.path, file.size,
+          file.mime, file.caption, file.thumbnail, index, new Date(file.createdAt)]);
+      }
     }
-    if (item.cover) {
+    const oldLinks = { ...previous?.links, github: previous?.github };
+    const links = { ...item.links, github: item.github };
+    for (const type of new Set([...Object.keys(oldLinks), ...Object.keys(links)])) {
+      const url = links[type];
+      if ((oldLinks[type] || '') === (url || '')) continue;
+      if (!url) await connection.execute('DELETE FROM portfolio_links WHERE portfolio_id=? AND link_type=?', [item.id, type]);
+      else await connection.execute(`INSERT INTO portfolio_links (portfolio_id, link_type, url) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE url=VALUES(url)`, [item.id, type, url]);
+    }
+    if (item.cover && !same(previous?.cover, item.cover)) {
       const settings = JSON.stringify(item.cover);
       await connection.execute(`INSERT INTO portfolio_covers (portfolio_id, settings) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE settings = ?`, [item.id, settings, settings]);
     }
-    if (item.materials) {
+    if (item.materials && !same(previous?.materials, item.materials)) {
       const settings = JSON.stringify(item.materials);
       await connection.execute(`INSERT INTO portfolio_materials (portfolio_id, settings) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE settings = ?`, [item.id, settings, settings]);
     }
-    if (item.contact) {
+    if (item.contact && !same(previous?.contact, item.contact)) {
       const settings = JSON.stringify(item.contact);
       await connection.execute(`INSERT INTO portfolio_contacts (portfolio_id, settings) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE settings = ?`, [item.id, settings, settings]);

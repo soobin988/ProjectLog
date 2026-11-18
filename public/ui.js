@@ -34,9 +34,50 @@ if (avatarForm) {
 for (const project of document.querySelectorAll('[data-project]')) {
   const toggle = project.querySelector('.project-head-toggle');
   const expandable = document.getElementById(toggle.getAttribute('aria-controls'));
-  const strip = expandable.querySelector('.node-strip');
-  const addNode = strip.querySelector('.node-add');
-  const lastCard = [...strip.querySelectorAll('.node-card')].at(-1);
+  let strip;
+  let addNode;
+  let lastCard;
+  let loading;
+  const status = expandable.querySelector('[data-strip-status]');
+  const retry = expandable.querySelector('[data-strip-retry]');
+
+  async function loadStrip() {
+    if (strip) return true;
+    if (loading) return loading;
+    loading = (async () => {
+      retry.hidden = true;
+      status.textContent = '작업 노드를 불러오는 중…';
+      try {
+        const response = await fetch(project.dataset.stripUrl);
+        if (!response.ok || response.redirected) throw new Error('작업 노드를 불러오지 못했어요.');
+        const template = document.createElement('template');
+        template.innerHTML = await response.text();
+        strip = template.content.querySelector('.node-strip');
+        if (!strip) throw new Error('작업 노드를 불러오지 못했어요.');
+        expandable.append(strip);
+        addNode = strip.querySelector('.node-add');
+        lastCard = [...strip.querySelectorAll('.node-card')].at(-1);
+        if (lastCard) new ResizeObserver(alignNodeAdd).observe(lastCard);
+        status.textContent = '';
+        alignNodeAdd();
+        const target = document.getElementById(location.hash.slice(1));
+        if (target && strip.contains(target)) {
+          expandable.hidden = false;
+          toggle.setAttribute('aria-expanded', 'true');
+          requestAnimationFrame(() => target.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+        } else if (!expandable.hidden) strip.scrollLeft = strip.scrollWidth;
+        return true;
+      } catch (error) {
+        status.textContent = error.message;
+        retry.hidden = false;
+        return false;
+      } finally {
+        loading = null;
+      }
+    })();
+    return loading;
+  }
+  retry.addEventListener('click', loadStrip);
   function alignNodeAdd() {
     const height = lastCard?.offsetHeight;
     if (!height) return;
@@ -44,7 +85,6 @@ for (const project of document.querySelectorAll('[data-project]')) {
     addNode.style.setProperty('--node-add-size', height + 'px');
     if (followEnd) strip.scrollLeft = strip.scrollWidth;
   }
-  if (lastCard) new ResizeObserver(alignNodeAdd).observe(lastCard);
   expandable.addEventListener('click', event => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const imageLink = event.target.closest('[data-open-gallery]');
@@ -63,19 +103,11 @@ for (const project of document.querySelectorAll('[data-project]')) {
     const shouldOpen = expandable.hidden;
     expandable.hidden = !shouldOpen;
     toggle.setAttribute('aria-expanded', String(shouldOpen));
-    if (shouldOpen) {
-      alignNodeAdd();
-      strip.scrollLeft = strip.scrollWidth;
-    }
+    if (shouldOpen) loadStrip();
   });
 
-  const target = document.getElementById(location.hash.slice(1));
-  if (target && expandable.contains(target)) {
-    expandable.hidden = false;
-    toggle.setAttribute('aria-expanded', 'true');
-    alignNodeAdd();
-    requestAnimationFrame(() => target.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
-  }
+  if (location.hash) loadStrip();
+  window.addEventListener('hashchange', () => { if (location.hash) loadStrip(); });
 }
 
 const progressForm = document.querySelector('[data-progress-form]');
@@ -311,6 +343,10 @@ for (const form of document.querySelectorAll('[data-feedback-form]')) {
       });
       if (response.status === 401) throw new Error('로그인이 만료됐어요. 다시 로그인해 주세요.');
       const result = await response.json().catch(() => ({}));
+      if (result.recoveredText) {
+        form.querySelector('[data-recovered-text]').value = result.recoveredText;
+        form.querySelector('[data-feedback-recovery]').hidden = false;
+      }
       if (!response.ok || !result.url) throw new Error(result.error || 'AI 응답을 처리하지 못했어요. 다시 요청해 주세요.');
       location.assign(new URL(result.url, location.href).href);
     } catch (error) {

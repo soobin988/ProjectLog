@@ -427,3 +427,13 @@ CREATE TABLE `activity_logs` (
   CONSTRAINT `activity_logs_ibfk_3` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_activity_todo` FOREIGN KEY (`todo_id`) REFERENCES `todos` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE projectlog_feedback_requests (
+      user_id INT UNSIGNED NOT NULL, request_id CHAR(36) NOT NULL, generation INT UNSIGNED NOT NULL,
+      node_id VARCHAR(80) NOT NULL, fingerprint CHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL, payload JSON,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (user_id, request_id), INDEX (user_id, status, updated_at),
+      FOREIGN KEY (user_id) REFERENCES projectlog_users(uid) ON DELETE CASCADE,
+      FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
