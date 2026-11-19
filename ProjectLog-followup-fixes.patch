@@ -1,0 +1,1994 @@
+diff --git a/.env.example b/.env.example
+index cee1239..0cb505b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -3,6 +3,8 @@
+ NODE_ENV=development
+ PORT=3000
+ PROJECT_LOG_HOST=127.0.0.1
++# Same-host Nginx: loopback. Direct exposure: false. Other proxies: explicit trusted IP/CIDR.
++PROJECT_LOG_TRUST_PROXY=loopback
+ PROJECT_LOG_PUBLIC_ORIGIN=http://localhost:3000
+ PROJECT_LOG_MYSQL_URL=mysql://projectlog:change_me@127.0.0.1:3306/projectlog
+ 
+diff --git a/README.md b/README.md
+index 1b8559c..d96a901 100644
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,17 @@ node --env-file=.env app.js
+ 
+ 브라우저에서 [http://localhost:3000](http://localhost:3000)을 여세요. `PROJECT_LOG_MYSQL_URL` 설정은 필수입니다. 프로젝트·노드·수정 이력·첨부 메타데이터·AI 피드백·조치·할 일·알림을 독립 MySQL 테이블에 저장합니다. JSON 파일은 기존 데이터 가져오기 입력으로만 사용합니다. 포트는 `PORT`, 수신 주소는 `PROJECT_LOG_HOST`로 지정할 수 있습니다.
+ 
++## 후속 수정 패치 적용 후
++
++이 패치는 `18e2047` 이후 코드에 적용합니다. `npm ci`로 이미지 처리 의존성 `sharp`를 설치하고 서버를 재시작하세요. 기존 DB에는 시작 시 프로필 이미지 해시 컬럼과 문의 정렬 인덱스가 자동으로 추가됩니다. 기존 DB에 `sql/schema.sql`을 다시 실행할 필요는 없습니다.
++
++- 프로젝트 삭제와 연결된 Portfolio의 정보 보존을 한 트랜잭션으로 처리합니다. 저장 충돌이나 실패 시 함께 롤백합니다.
++- 같은 서버의 Nginx 뒤에서는 `PROJECT_LOG_TRUST_PROXY=loopback`을 사용합니다(기본값). Node를 직접 공개하면 `false`, 별도 프록시를 쓰면 실제 프록시의 IP/CIDR을 지정합니다. 기존 Nginx의 `X-Forwarded-For`, `X-Forwarded-Proto` 설정을 유지하세요.
++- 프로필 이미지는 최대 256px WebP로 저장합니다. 기존 사진은 첫 조회 때 변환하며, 이후 변경 없는 요청은 해시만 확인하고 304를 반환합니다.
++- Portfolio 목록은 표지용 정보만, 상세 화면은 연결된 프로젝트의 최신 수정 이력만 조회합니다.
++- 완료 Todo는 30개씩 조회하며 서울 날짜 검색과 이전 기록의 수정 링크를 지원합니다. 미완료 Todo는 계속 함께 표시합니다.
++- 회원 관리·문의·업데이트는 30개씩 조회합니다. 회원 상세는 해당 회원만 집계합니다. 업데이트 첫 페이지는 프로세스별로 30초간 공유하고, 같은 프로세스에서 공지 등록 시 캐시를 비웁니다. 기존 JSONL 문의도 메모리 사용량을 제한해 병합합니다.
++
+ ## MySQL과 회원 계정
+ 
+ 새 DB를 만들 때 관리자 MySQL 콘솔에서 아래 예시를 실행합니다. `change_me`는 본인이 정한 새 비밀번호로 바꾸고, URL에 넣을 때 특수문자는 URL 인코딩합니다.
+diff --git a/app.js b/app.js
+index ecc4ae1..aa2a824 100644
+--- a/app.js
++++ b/app.js
+@@ -11,11 +11,12 @@ const { currentVersion, listUpdates } = require('./services/updates');
+ const { pool, ready } = require('./services/mysql');
+ const { userStatistics, dashboardSummary } = require('./services/workspace-statistics');
+ const { dashboardData } = require('./services/dashboard-data');
++const { todoList } = require('./services/todo-list');
+ const { unreadCounts, listNotifications, markNotificationRead, pageNumber } = require('./services/notifications');
+ 
+ const { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
+   shortDate, defaultColor, validColor, completionDate, completionTime,
+-  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, seoulDate, completedTodos,
++  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, seoulDate,
+   todoFields, todoError, addTodo, nodeDetailUrl } = require('./routes/shared');
+ 
+ const { assetUrl, assetHeaders } = require('./services/static-assets');
+@@ -24,6 +25,9 @@ const app = express();
+ app.locals.assetUrl = assetUrl;
+ 
+ app.disable('x-powered-by');
++// Same-host Nginx overwrites forwarded headers; trust only explicitly configured peers.
++app.set('trust proxy', process.env.PROJECT_LOG_TRUST_PROXY === 'false' ? false
++  : (process.env.PROJECT_LOG_TRUST_PROXY || 'loopback'));
+ app.set('view engine', 'ejs');
+ app.set('views', path.join(__dirname, 'views'));
+ app.locals.currentVersion = currentVersion;
+@@ -34,8 +38,8 @@ app.use(loadAccount);
+ app.use(accounts);
+ app.use(require('./routes/developer'));
+ app.get('/updates', async (req, res) => {
+-  res.set('Cache-Control', 'no-store');
+-  res.json({ version: currentVersion, updates: await listUpdates() });
++  res.set('Cache-Control', 'private, no-cache');
++  res.json({ version: currentVersion, ...await listUpdates(req.query.cursor) });
+ });
+ app.use(async (req, res, next) => {
+   res.locals.feedbackMarkdown = await feedbackMarkdown;
+@@ -100,26 +104,35 @@ app.get('/', async (req, res) => {
+   });
+ });
+ 
+-function renderTodos(res, { draft = {}, editing, error = '', completedOn = '' } = {}) {
++function todoQuery(req) {
++  const params = new URLSearchParams();
++  const page = pageNumber(req.query.page);
++  if (page > 1) params.set('page', page);
++  if (validAnchor(req.query.completedOn)) params.set('completedOn', req.query.completedOn);
++  return params.size ? '?' + params : '';
++}
++
++async function renderTodos(req, res, { draft = {}, editing, error = '' } = {}) {
++  const listing = await todoList(req.user.uid, req.query);
++  const { items, completedOn, pagination } = listing;
++  editing ||= listing.editing;
++  if (editing && !items.some(item => item.id === editing.id)) items.push(editing);
+   const today = seoulDate.format(new Date());
+-  const completionsByDate = Object.groupBy(completedTodos(), completionDate);
++  const completionsByDate = Object.groupBy(items.filter(todo => todo.done && todo.completedAt).sort((a,b) => b.completedAt.localeCompare(a.completedAt)), completionDate);
+   const { [today]: todayDone = [], ...pastTimeline } = completionsByDate;
+-  const pending = todos.filter(todo => !todo.done);
+-  const pastDone = [...Object.values(pastTimeline).flat(), ...todos.filter(todo => todo.done && !todo.completedAt)];
++  const pending = items.filter(todo => !todo.done);
++  const pastDone = [...Object.values(pastTimeline).flat(), ...items.filter(todo => todo.done && !todo.completedAt)];
+   res.render('todos', {
+     page: 'todos', title: 'Todo List', projects, pending, today, todayDone, pastDone, pastTimeline,
+-    draft, editing, error, completedOn, matchingCompletions: completionsByDate[completedOn] || []
++    draft, editing, error, completedOn, pagination, todoQuery: todoQuery(req), matchingCompletions: completionsByDate[completedOn] || []
+   });
+ }
+ 
+-app.get('/todos', (req, res) => renderTodos(res, {
+-  editing: todos.find(todo => todo.id === req.query.edit),
+-  completedOn: validAnchor(req.query.completedOn) ? req.query.completedOn : ''
+-}));
++app.get('/todos', (req, res) => renderTodos(req, res));
+ app.post('/todos', async (req, res) => {
+   const draft = todoFields(req, seoulDate.format(new Date()));
+   const error = todoError(draft);
+-  if (error) return renderTodos(res.status(422), { draft, error });
++  if (error) return renderTodos(req, res.status(422), { draft, error });
+   await addTodo(draft);
+   res.redirect('/todos');
+ });
+@@ -154,11 +167,11 @@ app.post('/todos/:todoId/:action', async (req, res, next) => {
+     const editing = { ...todo, ...todoFields(req, todo.dueDate) };
+     if (todo.feedbackSource) editing.projectId = todo.feedbackSource.projectId;
+     const error = todoError(editing);
+-    if (error) return renderTodos(res.status(422), { editing, error });
++    if (error) return renderTodos(req, res.status(422), { editing, error });
+     await saveData(projects, nodes, todos.map(item => item.id === todoId ? editing : item));
+-    return res.redirect('/todos#todo-' + todoId);
++    return res.redirect('/todos' + todoQuery(req) + '#todo-' + todoId);
+   }
+-  const returnUrl = validAnchor(req.query.completedOn) ? '/todos?completedOn=' + req.query.completedOn : '/todos';
++  const returnUrl = '/todos' + todoQuery(req);
+   const done = action === 'done';
+   if (action !== 'delete' && todo.done === done) return res.redirect(303, returnUrl);
+   const completedAt = done ? new Date().toISOString() : null;
+diff --git a/db.js b/db.js
+index 7d63d47..6e1f2ac 100644
+--- a/db.js
++++ b/db.js
+@@ -35,10 +35,10 @@ async function useWorkspace(req, res, next) {
+   let options;
+   if (req.method === 'GET' || req.method === 'HEAD') {
+     options = { readOnly: true, history: req.path.endsWith('/revisions') };
+-    if (req.path === '/' || req.path === '/projects' || req.path === '/todos' || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
++    if (req.path === '/' || req.path === '/projects' || /^\/todos(?:\/|$)/.test(req.path) || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
+       options.nodes = false;
+       options.alerts = false;
+-      options.todos = req.path === '/todos';
++      options.todos = false;
+     }
+     const projectPath = /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
+     if (projectPath) options.projectId = projectPath[1];
+@@ -53,6 +53,12 @@ async function useWorkspace(req, res, next) {
+   }
+   const projectWrite = req.method === 'POST' && /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
+   if (projectWrite) options = { projectId: projectWrite[1], history: false, scope: 'project' };
++  if (/^\/portfolio(?:\/|$)/.test(req.path)) {
++    const match = /^\/portfolio\/([0-9a-f-]{36})(?:\/|$)/i.exec(req.path);
++    if (match) req.portfolio = await require('./services/portfolio-store').get(req.user.uid, match[1]);
++    options = { readOnly: true, history: false, todos: false, alerts: false,
++      nodes: Boolean(req.portfolio?.projectId), projectId: req.portfolio?.projectId };
++  }
+   workspace.run(await readWorkspace(req.user.uid, options), next);
+ }
+ 
+@@ -61,14 +67,14 @@ async function refreshWorkspace() {
+   if (current) Object.assign(current, await readWorkspace(current.uid));
+ }
+ 
+-async function saveData(nextProjects, nextNodes, nextTodos = todos, nextReadAlerts = readAlerts) {
++async function saveData(nextProjects, nextNodes, nextTodos = todos, nextReadAlerts = readAlerts, transactionOptions) {
+   const records = {
+     projects: [...nextProjects], nodes: [...nextNodes], todos: [...nextTodos], readAlerts: [...nextReadAlerts]
+   };
+   const current = workspace.getStore();
+   if (current) {
+     const connection = await ready();
+-    return saveWorkspace(connection, current, records);
++    return saveWorkspace(connection, current, records, transactionOptions);
+   }
+   throw new Error('A member workspace context is required');
+ }
+diff --git a/package-lock.json b/package-lock.json
+index f3b6c21..bdb2e1e 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -18,12 +18,523 @@
+         "micromark-util-decode-string": "^2.0.1",
+         "multer": "^2.5.0",
+         "mysql2": "^3.24.6",
+-        "openai": "^7.57.0"
++        "openai": "^7.57.0",
++        "sharp": "^0.35.5"
+       },
+       "engines": {
+         "node": ">=22"
+       }
+     },
++    "node_modules/@emnapi/runtime": {
++      "version": "1.11.3",
++      "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.11.3.tgz",
++      "integrity": "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "tslib": "^2.4.0"
++      }
++    },
++    "node_modules/@img/colour": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
++      "integrity": "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@img/sharp-darwin-arm64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.35.5.tgz",
++      "integrity": "sha512-QRUlFQ0WxvdWyqqG/WtI3iupfD5rBzmCHXSdPsY91sAtVtTo7Q4cb6zOccZ3gqEqkr0f1As1ehLqmEpDsRf+lg==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-darwin-arm64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-darwin-x64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-x64/-/sharp-darwin-x64-0.35.5.tgz",
++      "integrity": "sha512-+BR255RhDlpygUpOc/Jdt1nT6DQ3XG/ERo5wbcdOf5Q320dKtPCKPLR1LJs9VGXRaMa8l1uUa0tkCNOXiAxZUw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-darwin-x64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-freebsd-wasm32": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-freebsd-wasm32/-/sharp-freebsd-wasm32-0.35.5.tgz",
++      "integrity": "sha512-Y/z91nEZ4uIBX5X3nfTovjU9lHNKFYbL2lpHCLVNmXQK03VIZvXBBt0KxbPGp2SdGSF+2mQU4e+hQaWOt86iAw==",
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "dependencies": {
++        "@img/sharp-wasm32": "0.35.5"
++      },
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-darwin-arm64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz",
++      "integrity": "sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-darwin-x64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-x64/-/sharp-libvips-darwin-x64-1.3.4.tgz",
++      "integrity": "sha512-iR2OKH80yi0U+dUplyh3/xdpFvps6YkCwsXenIJxqxR1v9o+xtKTGbS9H7cps+2Vxjc8B1j96p75NmTGjIhtpQ==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-arm": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm/-/sharp-libvips-linux-arm-1.3.4.tgz",
++      "integrity": "sha512-LmRtTsOHuvM2+wlO2Db37dx5MiZhB0FvSunciw48YjdOkZz9KAiRbm8ujeMOA1INqmei5NapFxYEK1D1ZSidmw==",
++      "cpu": [
++        "arm"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-arm64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm64/-/sharp-libvips-linux-arm64-1.3.4.tgz",
++      "integrity": "sha512-Y3dgX/6lE2QhQb+Gxy0WZxfg9MEm/JBjamZpS2IklP7xIQoKN4hzAm7KcMVGtaVDt3neE9OKBC7vAfonA/Lr1A==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-ppc64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-ppc64/-/sharp-libvips-linux-ppc64-1.3.4.tgz",
++      "integrity": "sha512-Le6boB8Tai0Nis+gIxIpKx68UDVVIqdR8Tin5Yf1z2LJJQLDJvCDRqRu+jC2qCoD+eIomonmOwB4smBRxfVpYQ==",
++      "cpu": [
++        "ppc64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-riscv64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-riscv64/-/sharp-libvips-linux-riscv64-1.3.4.tgz",
++      "integrity": "sha512-aHkkIEHPRdQEegJN20MLmGtxYD9R2wQr3Cwpddnu5+YKMt6Uzax7S9h5gpZTo8wyrGuZSlfQ63OevL5mTyOC7Q==",
++      "cpu": [
++        "riscv64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-s390x": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-s390x/-/sharp-libvips-linux-s390x-1.3.4.tgz",
++      "integrity": "sha512-ra/mB6MikESDUO7Yg+Mi95bFBb9GsObURuhnOv3OqknjGe9sZrG8tCe9q0xSIGrtLgvgw0gKnFWcK4blSgQOuQ==",
++      "cpu": [
++        "s390x"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-x64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.4.tgz",
++      "integrity": "sha512-GJ//SSXbnwSDes02umB3nDJLFcQzw8a18V8fyhqr6tV515tOEMdImjjxj1AoafMRz56F3PHgftnj1QEKSU1zkw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linuxmusl-arm64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-arm64/-/sharp-libvips-linuxmusl-arm64-1.3.4.tgz",
++      "integrity": "sha512-hvulFwtjUcagsis6BBxHwGFwWoNZjgYmULGVrZcyfNbjA8hKILbRxGg15/7w5HDyXHXUos/j6baAWqnCyQ2DWA==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linuxmusl-x64": {
++      "version": "1.3.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-x64/-/sharp-libvips-linuxmusl-x64-1.3.4.tgz",
++      "integrity": "sha512-6zXKeE/p39I1AmA3cJG35eyBGNqNddLnUXjhwBnsGjFPWqf5VKkDBEqaEkPDoTEtkxwi2vv8Tcr2mDyP4So7Fg==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-linux-arm": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm/-/sharp-linux-arm-0.35.5.tgz",
++      "integrity": "sha512-LEaXK2WdXVK5ykcw0buWyPMsmLLL2vpHLD6yrNSW+JGEL3BZPA4tpKN6iaMc4AxTTAoaX/sU1rOL51lcIz48ZQ==",
++      "cpu": [
++        "arm"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-arm": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-arm64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm64/-/sharp-linux-arm64-0.35.5.tgz",
++      "integrity": "sha512-LYVx5JTsOM2CBzmxreh+nl64/3H6Xb09iSLknqH47z2T2DFFxDeFLP5y4dJwe6H7uGQlHPyEEtIqyo3DYsRwdQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-arm64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-ppc64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-ppc64/-/sharp-linux-ppc64-0.35.5.tgz",
++      "integrity": "sha512-QVxAAq8evVRI9ia2vqgwrmWucn5Dfv+JdWzj75pD8omHLPSP7f8p20O8jxzjCcuCEQEOtYOZUmX1hkiZ0kdevA==",
++      "cpu": [
++        "ppc64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-ppc64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-riscv64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-riscv64/-/sharp-linux-riscv64-0.35.5.tgz",
++      "integrity": "sha512-LtdreXguaavKODPIfzJ4kffx7UNt1omwtK0rch4EBbbSTXPnxWmYSayXdLJw0fJzQ97kHt1gL/yh4tvU+nCyRQ==",
++      "cpu": [
++        "riscv64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-riscv64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-s390x": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-s390x/-/sharp-linux-s390x-0.35.5.tgz",
++      "integrity": "sha512-UZasTOFiYzotTsGOCu42BfUzP6Tu6Do/947iRm1RsLKvlllxwGcn4RN27LibGWceix4Y+Pmw3jsnTcCQIgWjqA==",
++      "cpu": [
++        "s390x"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-s390x": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-x64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.5.tgz",
++      "integrity": "sha512-SxFtLTeJInhAA9Q836kux2vZNeOBQEx658qvbboZScr0wIARym3IcGmW7KpVD5sbVg0Ojy+udFQdayYIZyoNog==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-x64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linuxmusl-arm64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-arm64/-/sharp-linuxmusl-arm64-0.35.5.tgz",
++      "integrity": "sha512-9HbMclmI1zlNkFRs3z9/eBtDjfD0sGlrX1z6b1qwmiFY5ElDLh4BC0LPBdVp7z1DXFiKlIcznf+ZlsuZzLxQqg==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linuxmusl-arm64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-linuxmusl-x64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-x64/-/sharp-linuxmusl-x64-0.35.5.tgz",
++      "integrity": "sha512-4KOphqB035HrVdqLZfCgMzzERrQkkzOwRhl4OAkRO1YCldbaFjySXMaK534Mo0V+LndnlJk+sbUyLeU0ULyD1A==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linuxmusl-x64": "1.3.4"
++      }
++    },
++    "node_modules/@img/sharp-wasm32": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-0.35.5.tgz",
++      "integrity": "sha512-Ptsga1su4tQx+LLF1ECS9U6nz5kmrXKo6XVbtR48Ke3ZRxxgaWBu7IDtEe1quo8hiupwm6WFqxVlXaSf7IINGQ==",
++      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
++      "optional": true,
++      "dependencies": {
++        "@emnapi/runtime": "^1.11.3"
++      },
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-webcontainers-wasm32": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-webcontainers-wasm32/-/sharp-webcontainers-wasm32-0.35.5.tgz",
++      "integrity": "sha512-hfhF/FmoQyTUkA0bIKFOtw536BQSeBMe6BF6QyWlrPxT754+TFLaZ7sKKTfvvM0yJgKgaYTwnFCIZ/GuDw5SUA==",
++      "cpu": [
++        "wasm32"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "dependencies": {
++        "@img/sharp-wasm32": "0.35.5"
++      },
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-arm64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-arm64/-/sharp-win32-arm64-0.35.5.tgz",
++      "integrity": "sha512-X4t7g+7ZA5DKblCBEXGjUqqemj4vczING/5viFwAL8h4N3qYeyjwdCvRLHi4EdOUI+2Z7UFlp1VM+p/AuEtm6Q==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-ia32": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-ia32/-/sharp-win32-ia32-0.35.5.tgz",
++      "integrity": "sha512-5Zm82LoBc43nhwNybZlG7Y1KO//Zhsn306fQl29ZOuStHLGTo3BWL83q3cznX0poxSAMuYL1On/BHBxkBeKr6A==",
++      "cpu": [
++        "ia32"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-x64": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-x64/-/sharp-win32-x64-0.35.5.tgz",
++      "integrity": "sha512-x76eH0vEiHlcMQu8Y8IenntaACtddpT6W0wmXtWrnKcnKI7ME5DdgqhAD6SEWOEl1v2zDvkZDhFA9KnURwpfqg==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
+     "node_modules/@types/debug": {
+       "version": "4.1.13",
+       "resolved": "https://registry.npmjs.org/@types/debug/-/debug-4.1.13.tgz",
+@@ -330,6 +841,15 @@
+         "node": ">=6"
+       }
+     },
++    "node_modules/detect-libc": {
++      "version": "2.1.2",
++      "resolved": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
++      "integrity": "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==",
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/devlop": {
+       "version": "1.1.0",
+       "resolved": "https://registry.npmjs.org/devlop/-/devlop-1.1.0.tgz",
+@@ -665,7 +1185,6 @@
+       "resolved": "https://registry.npmjs.org/google-auth-library/-/google-auth-library-11.3.4.tgz",
+       "integrity": "sha512-RaYCDoeYIIFTRgH8hesSxqLrmtC2l+DB3cSCS/SN1TPGjI2VpPdJmF3bfRLUn8VvP/4I2Af9fsktw2f9SvVSVg==",
+       "license": "Apache-2.0",
+-      "peer": true,
+       "dependencies": {
+         "base64-js": "^1.3.0",
+         "ecdsa-sig-formatter": "^1.0.11",
+@@ -2060,6 +2579,18 @@
+       "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==",
+       "license": "MIT"
+     },
++    "node_modules/semver": {
++      "version": "7.8.6",
++      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.6.tgz",
++      "integrity": "sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==",
++      "license": "ISC",
++      "bin": {
++        "semver": "bin/semver.js"
++      },
++      "engines": {
++        "node": ">=10"
++      }
++    },
+     "node_modules/send": {
+       "version": "1.2.1",
+       "resolved": "https://registry.npmjs.org/send/-/send-1.2.1.tgz",
+@@ -2111,6 +2642,55 @@
+       "integrity": "sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==",
+       "license": "ISC"
+     },
++    "node_modules/sharp": {
++      "version": "0.35.5",
++      "resolved": "https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz",
++      "integrity": "sha512-Ywn4OnzGukp7CDMrp08RQ50YKmuwG47brZgIVPTvBaaAfQlRlygrRqSrxdCiL9M+LlzLBiJ68IR1QqvzHyjC7g==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "@img/colour": "^1.1.0",
++        "detect-libc": "^2.1.2",
++        "semver": "^7.8.5"
++      },
++      "engines": {
++        "node": ">=20.9.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-darwin-arm64": "0.35.5",
++        "@img/sharp-darwin-x64": "0.35.5",
++        "@img/sharp-freebsd-wasm32": "0.35.5",
++        "@img/sharp-libvips-darwin-arm64": "1.3.4",
++        "@img/sharp-libvips-darwin-x64": "1.3.4",
++        "@img/sharp-libvips-linux-arm": "1.3.4",
++        "@img/sharp-libvips-linux-arm64": "1.3.4",
++        "@img/sharp-libvips-linux-ppc64": "1.3.4",
++        "@img/sharp-libvips-linux-riscv64": "1.3.4",
++        "@img/sharp-libvips-linux-s390x": "1.3.4",
++        "@img/sharp-libvips-linux-x64": "1.3.4",
++        "@img/sharp-libvips-linuxmusl-arm64": "1.3.4",
++        "@img/sharp-libvips-linuxmusl-x64": "1.3.4",
++        "@img/sharp-linux-arm": "0.35.5",
++        "@img/sharp-linux-arm64": "0.35.5",
++        "@img/sharp-linux-ppc64": "0.35.5",
++        "@img/sharp-linux-riscv64": "0.35.5",
++        "@img/sharp-linux-s390x": "0.35.5",
++        "@img/sharp-linux-x64": "0.35.5",
++        "@img/sharp-linuxmusl-arm64": "0.35.5",
++        "@img/sharp-linuxmusl-x64": "0.35.5",
++        "@img/sharp-webcontainers-wasm32": "0.35.5",
++        "@img/sharp-win32-arm64": "0.35.5",
++        "@img/sharp-win32-ia32": "0.35.5",
++        "@img/sharp-win32-x64": "0.35.5"
++      },
++      "peerDependenciesMeta": {
++        "@types/node": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/side-channel": {
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/side-channel/-/side-channel-1.1.1.tgz",
+@@ -2224,6 +2804,13 @@
+         "node": ">=0.6"
+       }
+     },
++    "node_modules/tslib": {
++      "version": "2.9.1",
++      "resolved": "https://registry.npmjs.org/tslib/-/tslib-2.9.1.tgz",
++      "integrity": "sha512-a4Ux9VKuIMHsOS7ENbEq6hK2ZGYIT27Rtl0E4eD9KqwxhKiQeMZE/9xb3IdYwWaSOyIBQLExhQgXDTYoiCxnWA==",
++      "license": "0BSD",
++      "optional": true
++    },
+     "node_modules/type-is": {
+       "version": "2.1.0",
+       "resolved": "https://registry.npmjs.org/type-is/-/type-is-2.1.0.tgz",
+@@ -2246,7 +2833,8 @@
+       "version": "8.9.0",
+       "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz",
+       "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
+-      "license": "MIT"
++      "license": "MIT",
++      "peer": true
+     },
+     "node_modules/unist-util-is": {
+       "version": "6.0.1",
+diff --git a/package.json b/package.json
+index c8b3126..ce7e4a4 100644
+--- a/package.json
++++ b/package.json
+@@ -22,7 +22,8 @@
+     "micromark-util-decode-string": "^2.0.1",
+     "multer": "^2.5.0",
+     "mysql2": "^3.24.6",
+-    "openai": "^7.57.0"
++    "openai": "^7.57.0",
++    "sharp": "^0.35.5"
+   },
+   "engines": {
+     "node": ">=22"
+diff --git a/public/ui.js b/public/ui.js
+index 03c5fd8..318fb9c 100644
+--- a/public/ui.js
++++ b/public/ui.js
+@@ -465,6 +465,8 @@ if (todoGroups) {
+       const url = new URL(form.action);
+       const completedOn = new URLSearchParams(location.search).get('completedOn');
+       if (completedOn) url.searchParams.set('completedOn', completedOn);
++      const currentPage = new URLSearchParams(location.search).get('page');
++      if (currentPage) url.searchParams.set('page', currentPage);
+       const response = await fetch(url, { method: 'POST' });
+       if (!response.ok) throw new Error('Could not update todo');
+       const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+@@ -484,6 +486,7 @@ if (todoGroups) {
+       }
+       todoGroups.replaceChildren(...groups.children);
+       document.querySelector('[data-todo-timeline]').replaceWith(timeline);
++      document.querySelector('[data-todo-pagination]').replaceWith(page.querySelector('[data-todo-pagination]'));
+       if (restoreFocus) {
+         const nextCheck = nearbyRow && document.getElementById(nearbyRow.id)?.querySelector('.todo-check');
+         (nextCheck || document.querySelector('.todo-add input')).focus({ preventScroll: true });
+diff --git a/public/updates.js b/public/updates.js
+index 50fcb33..47ec0bb 100644
+--- a/public/updates.js
++++ b/public/updates.js
+@@ -3,21 +3,28 @@
+   const tabs = [...dialog.querySelectorAll('[data-settings-tab]')];
+   const list = dialog.querySelector('[data-updates-list]');
+   const status = dialog.querySelector('[data-updates-status]');
++  const more = dialog.querySelector('[data-more-updates]');
++  let nextCursor = '';
++  let loadedAt = 0;
++  let retryAppend = false;
+   const retry = dialog.querySelector('[data-retry-updates]');
+   const date = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium' });
+   let loading = false;
+ 
+-  async function loadUpdates() {
++  async function loadUpdates(append = false) {
++    if (!append && Date.now() - loadedAt < 30000) return;
+     if (loading) return;
+     loading = true;
+     retry.hidden = true;
++    more.disabled = true;
++    retryAppend = append;
+     status.textContent = '업데이트 내역을 불러오는 중…';
+     try {
+-      const response = await fetch('/updates', { cache: 'no-store' });
++      const response = await fetch('/updates' + (append && nextCursor ? '?cursor=' + encodeURIComponent(nextCursor) : ''));
+       if (!response.ok) throw new Error('업데이트 내역을 불러오지 못했어요.');
+-      const { updates } = await response.json();
++      const { updates, nextCursor: cursor } = await response.json();
+       const open = new Set([...list.querySelectorAll('details[open]')].map(card => card.dataset.updateId));
+-      list.replaceChildren(...updates.map(update => {
++      const cards = updates.map(update => {
+         const card = document.createElement('details');
+         card.className = 'settings-update-card';
+         card.dataset.updateId = update.id;
+@@ -37,13 +44,19 @@
+         summary.append(version, title, time);
+         card.append(summary, content);
+         return card;
+-      }));
++      });
++      if (append) list.append(...cards);
++      else list.replaceChildren(...cards);
++      nextCursor = cursor || '';
++      more.hidden = !nextCursor;
++      if (!append) loadedAt = Date.now();
+       status.textContent = updates.length ? '' : '아직 등록된 업데이트 내역이 없어요.';
+     } catch {
+       status.textContent = '업데이트 내역을 불러오지 못했어요.';
+       retry.hidden = false;
+     } finally {
+       loading = false;
++      more.disabled = false;
+     }
+   }
+ 
+@@ -66,7 +79,8 @@
+       target.focus();
+     });
+   }
+-  retry.addEventListener('click', loadUpdates);
++  retry.addEventListener('click', () => loadUpdates(retryAppend));
++  more.addEventListener('click', () => loadUpdates(true));
+   document.querySelector('[data-open-settings]').addEventListener('click', () => {
+     if (tabs.find(tab => tab.dataset.settingsTab === 'updates').getAttribute('aria-selected') === 'true') loadUpdates();
+   });
+diff --git a/routes/accounts.js b/routes/accounts.js
+index 4697719..2221e77 100644
+--- a/routes/accounts.js
++++ b/routes/accounts.js
+@@ -213,10 +213,11 @@ if (pool) {
+ }
+ 
+ async function renderSuggestions(req, res, { draft = '', error = '' } = {}) {
+-  const inbox = req.user?.developer ? await suggestionInbox() : null;
++  const inbox = req.user?.developer ? await suggestionInbox(req.query.cursor) : null;
+   res.set('Cache-Control', 'private, no-store');
+   res.render('suggestions', {
+-    page: 'suggestions', guestsOnly: Boolean(pool && !req.user), inbox,
++    page: 'suggestions', guestsOnly: Boolean(pool && !req.user), inbox: inbox?.items,
++    pagination: { previous: req.query.cursor ? '/suggestions' : '', next: inbox?.nextCursor ? '/suggestions?cursor=' + inbox.nextCursor : '' },
+     sent: !error && req.query.sent === '1', draft, error
+   });
+ }
+diff --git a/routes/developer.js b/routes/developer.js
+index 3a8ce01..4cf39a9 100644
+--- a/routes/developer.js
++++ b/routes/developer.js
+@@ -1,17 +1,17 @@
+ const { Router } = require('express');
+-const { recordActivity, recordActivitySlots, memberUsage, dailyUsage } = require('../services/member-usage');
++const { recordActivity, recordActivitySlots, memberUsage, usageSummary, dailyUsage } = require('../services/member-usage');
+ const { maxMemberLimit, readMemberLimit, setMemberLimit } = require('../services/membership');
+ const { findMember, removeMemberData } = require('../services/member-removal');
+ const { normalizeLayout, saveDashboardDefault } = require('../services/dashboard-default');
+ const { publishUpdate } = require('../services/updates');
+ 
++const { pageNumber } = require('../services/notifications');
+ const router = Router();
+ const periods = { '7': '최근 7일', '30': '최근 30일', all: '전체 기간' };
+ const number = new Intl.NumberFormat('ko-KR');
+ const dateTime = new Intl.DateTimeFormat('ko-KR', {
+   timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short'
+ });
+-const metrics = ['seconds', 'requests', 'failures', 'metered', 'inputTokens', 'outputTokens', 'totalTokens'];
+ const units = value => number.format(Number(value) || 0);
+ const periodFor = req => typeof req.query.period === 'string' && Object.hasOwn(periods, req.query.period) ? req.query.period : '30';
+ const daysFor = period => period === 'all' ? 0 : Number(period);
+@@ -53,15 +53,15 @@ router.use('/developer', (req, res, next) => {
+ 
+ async function renderMembers(req, res, limitError = '', updateError = '', updateDraft = {}) {
+   const period = periodFor(req);
+-  const [all, memberLimit] = await Promise.all([memberUsage(daysFor(period)), readMemberLimit()]);
+   const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
+-  const term = query.toLowerCase();
+-  const members = all.filter(member =>
+-    [member.uid, member.name, member.username].some(field => field != null && String(field).toLowerCase().includes(term)));
+-  const totals = Object.fromEntries(metrics.map(key =>
+-    [key, all.reduce((sum, member) => sum + (Number(member[key]) || 0), 0)]));
++  const memberPage = pageNumber(req.query.page);
++  const [{ members, hasMore }, { totals, memberCount }, memberLimit] = await Promise.all([
++    memberUsage(daysFor(period), { query, page: memberPage }), usageSummary(daysFor(period)), readMemberLimit()
++  ]);
++  const url = page => '/developer?' + new URLSearchParams({ period, q: query, page });
++  const pagination = { previous: memberPage > 1 ? url(memberPage - 1) : '', next: hasMore ? url(memberPage + 1) : '' };
+   res.render('developer', {
+-    page: 'developer', title: '개발자 전용', period, periods, query, members, totals, memberCount: all.length,
++    page: 'developer', title: '개발자 전용', period, periods, query, members, totals, memberCount, pagination,
+     memberLimit, maxMemberLimit, limitError, limitSaved: req.query.limit === 'saved',
+     updateError, updateDraft, updatePublished: req.query.update === 'published',
+     deleted: req.query.deleted === '1', cleanupFailed: req.query.cleanup === 'pending',
+@@ -113,8 +113,7 @@ router.param('uid', async (req, res, next, uid) => {
+ 
+ router.get(memberPath, async (req, res) => {
+   const period = periodFor(req);
+-  const members = await memberUsage(daysFor(period));
+-  const member = members.find(item => String(item.uid) === req.params.uid);
++  const { members: [member] } = await memberUsage(daysFor(period), { uid: Number(req.params.uid) });
+   if (!member) return missing(res);
+   res.render('developer-member', {
+     page: 'developer', title: member.name, member, dayRows: await dailyUsage(member.uid, daysFor(period)),
+diff --git a/routes/portfolio.js b/routes/portfolio.js
+index d46bdf0..ef822d5 100644
+--- a/routes/portfolio.js
++++ b/routes/portfolio.js
+@@ -215,17 +215,17 @@ const defaultPage = { heading: 'Portfolio', description: '내 프로젝트와 
+ 
+ async function renderList(req, res, { draft, headerError = '' } = {}) {
+   const uid = owner(req);
+-  const [items, settings] = await Promise.all([store.list(uid), store.pageSettings(uid)]);
++  const [items, settings] = await Promise.all([store.listCards(uid), store.pageSettings(uid)]);
+   const header = settings || defaultPage;
+   res.render('portfolio', {
+-    page: 'portfolio', title: 'Portfolio', entries: items.map(item => projectEntry(item)),
++    page: 'portfolio', title: 'Portfolio', entries: items.map(item => ({ item, title: item.title || projectFor(item.projectId)?.name || '연결된 프로젝트', cover: coverFor(item) })),
+     header, headerDraft: draft || header, headerError
+   });
+ }
+ 
+ async function ownerOnly(req, res, next, id) {
+   if (!uuidPattern.test(id)) return missing(res);
+-  req.portfolio = await store.get(owner(req), id);
++  req.portfolio ||= await store.get(owner(req), id);
+   if (!req.portfolio) return missing(res);
+   next();
+ }
+diff --git a/routes/projects.js b/routes/projects.js
+index 1d2ad01..b0e63c1 100644
+--- a/routes/projects.js
++++ b/routes/projects.js
+@@ -1,7 +1,7 @@
+ const { Router } = require('express');
+ const { randomUUID } = require('node:crypto');
+ const { projects, nodes, todos, readAlerts, saveData } = require('../db');
+-const { pool, ready } = require('../services/mysql');
++const { pool, ready, portfolioDb } = require('../services/mysql');
+ const { removeNodeFiles } = require('../services/member-removal');
+ const portfolioStore = require('../services/portfolio-store');
+ const { projectEntry } = require('./portfolio');
+@@ -99,17 +99,9 @@ router.post(base + '/edit', async (req, res) => {
+ });
+ 
+ router.post(base + '/delete', async (req, res) => {
++  if (pool) await portfolioDb();
+   const project = req.project;
+   const records = projectNodes(project.id);
+-  const linked = (await portfolioStore.list(req.user?.uid)).filter(item => item.projectId === project.id);
+-  for (const item of linked) {
+-    const entry = projectEntry(item);
+-    await portfolioStore.save(req.user?.uid, {
+-      ...item, projectId: '', title: entry.title, description: entry.description, technologies: entry.technologies,
+-      status: entry.status, startDate: item.startDate || projectStart(project) || '',
+-      endDate: item.endDate || project.completedDate || (project.progress >= 100 ? records[0]?.date || '' : '')
+-    }, req.memberGeneration);
+-  }
+   const deletedAlerts = new Set(records.flatMap(node => [
+     'issue-' + node.id, ...node.feedback.map((feedback, index) => feedbackAlertId(node, feedback, index))
+   ]));
+@@ -125,7 +117,21 @@ router.post(base + '/delete', async (req, res) => {
+     return remaining;
+   });
+   await saveData(projects.filter(item => item.id !== project.id), nextNodes, nextTodos,
+-    readAlerts.filter(id => !deletedAlerts.has(id)));
++    readAlerts.filter(id => !deletedAlerts.has(id)), {
++      generation: req.memberGeneration,
++      beforePersist: async connection => {
++        // The member lock also serializes Portfolio saves, including newly linked entries.
++        const linked = (await portfolioStore.list(req.user.uid, connection)).filter(item => item.projectId === project.id);
++        for (const item of linked) {
++          const entry = projectEntry(item);
++          await portfolioStore.save(req.user.uid, {
++            ...item, projectId: '', title: entry.title, description: entry.description, technologies: entry.technologies,
++            status: entry.status, startDate: item.startDate || projectStart(project) || '',
++            endDate: item.endDate || project.completedDate || (project.progress >= 100 ? records[0]?.date || '' : '')
++          }, req.memberGeneration, connection);
++        }
++      }
++    });
+   const files = records.flatMap(node => (node.revision?.files || []).map(file => file.id));
+   const failed = await removeNodeFiles(pool ? await ready() : null, files);
+   if (failed) console.error('Project attachment cleanup incomplete (%d files)', failed);
+diff --git a/services/account-avatar.js b/services/account-avatar.js
+index 34f87c2..e09ae0d 100644
+--- a/services/account-avatar.js
++++ b/services/account-avatar.js
+@@ -1,4 +1,6 @@
+ const multer = require('multer');
++const sharp = require('sharp');
++const { createHash } = require('node:crypto');
+ const { ready } = require('./mysql');
+ const { lockMemberGeneration } = require('./member-generation');
+ const { matchesFileType } = require('./attachment-types');
+@@ -21,19 +23,33 @@ function uploadAvatar(req, res, next) {
+     const bytes = req.file?.buffer;
+     const mime = bytes && avatarTypes.find(type => matchesFileType(bytes, type));
+     if (!mime) return res.status(422).json({ error: 'JPG, PNG 또는 WebP 사진을 선택해 주세요.' });
+-    saveAvatar(req.user.uid, req.memberGeneration, mime, bytes)
+-      .then(() => res.sendStatus(204)).catch(next);
++    thumbnail(bytes).then(image => saveAvatar(req.user.uid, req.memberGeneration, 'image/webp', image))
++      .then(() => res.sendStatus(204)).catch(error => {
++        if (error.avatarDecode) return res.status(422).json({ error: '사진을 읽을 수 없어요. 다른 사진을 선택해 주세요.' });
++        next(error);
++      });
+   });
+ }
+ 
++const hashFor = bytes => createHash('sha256').update(bytes).digest('hex');
++
++async function thumbnail(bytes) {
++  try {
++    return await sharp(bytes, { limitInputPixels: 16_000_000 }).rotate()
++      .resize(256, 256, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 80 }).toBuffer();
++  } catch (error) { error.avatarDecode = true; throw error; }
++}
++
+ async function saveAvatar(uid, generation, mime, bytes) {
+   const db = await ready();
+   const connection = await db.getConnection();
+   try {
+     await connection.beginTransaction();
+     await lockMemberGeneration(connection, uid, generation);
+-    await connection.execute(`INSERT INTO projectlog_user_avatars (uid, mime_type, image_data)
+-      VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE mime_type = ?, image_data = ?`, [uid, mime, bytes, mime, bytes]);
++    const hash = hashFor(bytes);
++    await connection.execute(`INSERT INTO projectlog_user_avatars (uid, mime_type, image_data, image_hash)
++      VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE mime_type = VALUES(mime_type),
++        image_data = VALUES(image_data), image_hash = VALUES(image_hash)`, [uid, mime, bytes, hash]);
+     await connection.commit();
+   } catch (error) {
+     await connection.rollback();
+@@ -46,9 +62,29 @@ async function saveAvatar(uid, generation, mime, bytes) {
+ async function getAvatar(req, res) {
+   if (!req.user) return res.sendStatus(401);
+   const db = await ready();
+-  const [[avatar]] = await db.execute('SELECT mime_type, image_data FROM projectlog_user_avatars WHERE uid = ?', [req.user.uid]);
+-  res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
++  const [[metadata]] = await db.execute('SELECT image_hash FROM projectlog_user_avatars WHERE uid = ?', [req.user.uid]);
++  res.set({ 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff', Vary: 'Cookie' });
++  if (!metadata) return res.redirect('/default-avatar.svg');
++  if (metadata.image_hash) {
++    res.set('ETag', '"' + metadata.image_hash + '"');
++    const etag = res.get('ETag');
++    if ((req.get('If-None-Match') || '').split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')) {
++      return res.sendStatus(304);
++    }
++  }
++  const [[avatar]] = await db.execute('SELECT mime_type, image_data, image_hash FROM projectlog_user_avatars WHERE uid = ?', [req.user.uid]);
+   if (!avatar) return res.redirect('/default-avatar.svg');
++  if (!avatar.image_hash) {
++    // Convert older uploads once; compare the original bytes to preserve a concurrent upload.
++    const original = avatar.image_data;
++    try { avatar.image_data = await thumbnail(original); avatar.mime_type = 'image/webp'; }
++    catch { /* Keep older undecodable images available. New uploads are validated. */ }
++    avatar.image_hash = hashFor(avatar.image_data);
++    await db.execute(`UPDATE projectlog_user_avatars SET mime_type=?, image_data=?, image_hash=?
++      WHERE uid=? AND image_hash IS NULL AND image_data=?`,
++    [avatar.mime_type, avatar.image_data, avatar.image_hash, req.user.uid, original]);
++  }
++  res.set('ETag', '"' + avatar.image_hash + '"');
+   res.type(avatar.mime_type).send(avatar.image_data);
+ }
+ 
+diff --git a/services/list-cursor.js b/services/list-cursor.js
+new file mode 100644
+index 0000000..e4d28e5
+--- /dev/null
++++ b/services/list-cursor.js
+@@ -0,0 +1,13 @@
++function encodeCursor(values) {
++  return Buffer.from(JSON.stringify(values)).toString('base64url');
++}
++
++function decodeCursor(value) {
++  if (typeof value !== 'string' || value.length > 512) return null;
++  try {
++    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString());
++    return Array.isArray(parsed) ? parsed : null;
++  } catch { return null; }
++}
++
++module.exports = { encodeCursor, decodeCursor };
+diff --git a/services/member-usage.js b/services/member-usage.js
+index 23b527d..31f8f43 100644
+--- a/services/member-usage.js
++++ b/services/member-usage.js
+@@ -145,27 +145,43 @@ function startOfPeriod(days) {
+   return (today - days + 1) * daySeconds - seoulOffset;
+ }
+ 
+-async function memberUsage(days) {
++async function memberUsage(days, { query = '', page = 1, uid } = {}) {
+   const db = await usageDb();
+   const from = startOfPeriod(days);
+-  const [rows] = await db.execute(`
+-    SELECT u.uid, u.username, u.display_name AS name, u.google_subject IS NOT NULL AS google,
+-      a.seconds, recent.lastActive, f.requests, f.failures, f.metered, f.inputTokens, f.outputTokens, f.totalTokens
+-    FROM projectlog_users u
+-    LEFT JOIN (
+-      SELECT uid, ${activityTotal} AS seconds
+-      FROM projectlog_activity WHERE minute_slot >= ? GROUP BY uid
+-    ) a ON a.uid = u.uid
+-    LEFT JOIN (
+-      SELECT uid, MAX(minute_slot) * 60 AS lastActive
+-      FROM projectlog_activity GROUP BY uid
+-    ) recent ON recent.uid = u.uid
+-    LEFT JOIN (
+-      SELECT uid, ${aiTotals}
+-      FROM projectlog_ai_usage WHERE recorded_at >= ? GROUP BY uid
+-    ) f ON f.uid = u.uid
+-    ORDER BY u.uid`, [from / 60, from]);
+-  return rows;
++  const condition = uid ? 'uid=?' : query ? "(CAST(uid AS CHAR) LIKE ? OR display_name LIKE ? OR username LIKE ?)" : 'TRUE';
++  // LOCATE treats user-entered % and _ as ordinary characters, unlike LIKE.
++  const search = condition.replaceAll('CAST(uid AS CHAR) LIKE ?', 'LOCATE(?, CAST(uid AS CHAR))>0')
++    .replaceAll('display_name LIKE ?', 'LOCATE(?, display_name)>0').replaceAll('username LIKE ?', 'LOCATE(?, username)>0');
++  const [selected] = await db.execute(`SELECT uid, username, display_name AS name, google_subject IS NOT NULL AS google
++    FROM projectlog_users WHERE ${search} ORDER BY uid LIMIT ${uid ? 1 : 31} OFFSET ${uid ? 0 : (page - 1) * 30}`,
++    uid ? [uid] : query ? [query, query, query] : []);
++  const members = selected.slice(0, 30);
++  if (!members.length) return { members, hasMore: false };
++  const ids = members.map(member => member.uid);
++  const placeholders = ids.map(() => '?').join(',');
++  const [[activity], [recent], [ai]] = await Promise.all([
++    db.execute(`SELECT uid, ${activityTotal} AS seconds FROM projectlog_activity
++      WHERE uid IN (${placeholders}) AND minute_slot>=? GROUP BY uid`, [...ids, from / 60]),
++    db.execute(`SELECT uid, MAX(minute_slot)*60 AS lastActive FROM projectlog_activity
++      WHERE uid IN (${placeholders}) GROUP BY uid`, ids),
++    db.execute(`SELECT uid, ${aiTotals} FROM projectlog_ai_usage
++      WHERE uid IN (${placeholders}) AND recorded_at>=? GROUP BY uid`, [...ids, from])
++  ]);
++  const byId = rows => new Map(rows.map(row => [row.uid, row]));
++  const a = byId(activity), r = byId(recent), f = byId(ai);
++  return { members: members.map(member => ({ ...member, ...a.get(member.uid), ...r.get(member.uid), ...f.get(member.uid) })),
++    hasMore: selected.length > 30 };
++}
++
++async function usageSummary(days) {
++  const db = await usageDb();
++  const from = startOfPeriod(days);
++  const [[[count]], [[activity]], [[ai]]] = await Promise.all([
++    db.execute('SELECT COUNT(*) AS memberCount FROM projectlog_users'),
++    db.execute(`SELECT ${activityTotal} AS seconds FROM projectlog_activity WHERE minute_slot>=?`, [from / 60]),
++    db.execute(`SELECT ${aiTotals} FROM projectlog_ai_usage WHERE recorded_at>=?`, [from])
++  ]);
++  return { memberCount: count.memberCount, totals: { ...activity, ...ai } };
+ }
+ 
+ async function dailyUsage(uid, days) {
+@@ -186,4 +202,4 @@ async function dailyUsage(uid, days) {
+   }));
+ }
+ 
+-module.exports = { usageDb, recordActivity, recordActivitySlots, activityBuckets, trackAiResponse, linkFeedbackUsage, memberUsage, dailyUsage };
++module.exports = { usageDb, recordActivity, recordActivitySlots, activityBuckets, trackAiResponse, linkFeedbackUsage, memberUsage, usageSummary, dailyUsage };
+diff --git a/services/mysql.js b/services/mysql.js
+index f712006..7763b3e 100644
+--- a/services/mysql.js
++++ b/services/mysql.js
+@@ -18,8 +18,11 @@ async function createTables() {
+     uid INT UNSIGNED PRIMARY KEY,
+     mime_type VARCHAR(32) NOT NULL,
+     image_data MEDIUMBLOB NOT NULL,
++    image_hash CHAR(64),
+     FOREIGN KEY (uid) REFERENCES projectlog_users(uid) ON DELETE CASCADE
+   ) ENGINE=InnoDB`);
++  const [avatarColumns] = await pool.query("SHOW COLUMNS FROM projectlog_user_avatars LIKE 'image_hash'");
++  if (!avatarColumns.length) await pool.query('ALTER TABLE projectlog_user_avatars ADD image_hash CHAR(64) NULL');
+   await pool.query(`CREATE TABLE IF NOT EXISTS projectlog_workspaces (
+     uid INT UNSIGNED PRIMARY KEY,
+     version INT UNSIGNED NOT NULL DEFAULT 0,
+@@ -45,6 +48,10 @@ async function createTables() {
+     message TEXT NOT NULL,
+     submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
++  for (const table of ['projectlog_suggestions', 'projectlog_guest_suggestions']) {
++    const [indexes] = await pool.query('SHOW INDEX FROM ' + table + " WHERE Key_name='inbox_date'");
++    if (!indexes.length) await pool.query('ALTER TABLE ' + table + ' ADD INDEX inbox_date (submitted_at, id)');
++  }
+   await pool.query(`CREATE TABLE IF NOT EXISTS projectlog_member_settings (
+     id TINYINT UNSIGNED PRIMARY KEY,
+     member_limit INT UNSIGNED NOT NULL
+diff --git a/services/portfolio-store.js b/services/portfolio-store.js
+index 1d4d257..c26ecdf 100644
+--- a/services/portfolio-store.js
++++ b/services/portfolio-store.js
+@@ -59,9 +59,25 @@ async function loadItems(where, params, connection) {
+   }));
+ }
+ 
+-async function list(uid) {
++async function list(uid, connection) {
+   if (!pool) return readLocal().items;
+-  return loadItems('p.user_id = ?', [uid]);
++  return loadItems('p.user_id = ?', [uid], connection);
++}
++
++async function listCards(uid) {
++  if (!pool) return readLocal().items;
++  const db = await portfolioDb();
++  const [rows] = await db.execute(`SELECT p.id, p.project_id, p.title, c.settings AS cover
++    FROM portfolios p LEFT JOIN portfolio_covers c ON c.portfolio_id=p.id
++    WHERE p.user_id=? ORDER BY p.created_at DESC, p.id`, [uid]);
++  if (!rows.length) return [];
++  const [files] = await db.execute(`SELECT f.id, f.portfolio_id, f.is_thumbnail FROM portfolio_files f
++    JOIN portfolios p ON p.id=f.portfolio_id WHERE p.user_id=? AND f.file_type='image'
++    ORDER BY f.sort_order`, [uid]);
++  const byItem = Object.groupBy(files, file => file.portfolio_id);
++  return rows.map(row => ({ id: row.id, projectId: row.project_id, title: row.title,
++    cover: typeof row.cover === 'string' ? JSON.parse(row.cover) : row.cover,
++    files: (byItem[row.id] || []).map(file => ({ id: file.id, type: 'image', thumbnail: Boolean(file.is_thumbnail) })) }));
+ }
+ 
+ async function pageSettings(uid) {
+@@ -100,7 +116,7 @@ async function shared(id) {
+   return item;
+ }
+ 
+-async function save(uid, item, generation) {
++async function save(uid, item, generation, transaction) {
+   const now = new Date();
+   if (!pool) {
+     updateLocal(data => {
+@@ -115,9 +131,9 @@ async function save(uid, item, generation) {
+     return;
+   }
+   const db = await portfolioDb();
+-  const connection = await db.getConnection();
++  const connection = transaction || await db.getConnection();
+   try {
+-    await connection.beginTransaction();
++    if (!transaction) await connection.beginTransaction();
+     await lockMemberGeneration(connection, uid, generation);
+     const [previous] = item.version === undefined ? [] : await loadItems('p.user_id = ? AND p.id = ?', [uid, item.id], connection);
+     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+@@ -182,12 +198,12 @@ async function save(uid, item, generation) {
+       await connection.execute(`INSERT INTO portfolio_contacts (portfolio_id, settings) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE settings = ?`, [item.id, settings, settings]);
+     }
+-    await connection.commit();
++    if (!transaction) await connection.commit();
+   } catch (error) {
+-    await connection.rollback();
++    if (!transaction) await connection.rollback();
+     throw error;
+   } finally {
+-    connection.release();
++    if (!transaction) connection.release();
+   }
+ }
+ 
+@@ -231,4 +247,4 @@ async function addAnalysis(uid, entry, generation) {
+   if (!result.affectedRows) throw memberChanged();
+ }
+ 
+-module.exports = { list, pageSettings, savePageSettings, get, shared, save, remove, analysisHistory, addAnalysis };
++module.exports = { list, listCards, pageSettings, savePageSettings, get, shared, save, remove, analysisHistory, addAnalysis };
+diff --git a/services/suggestions.js b/services/suggestions.js
+index 5b92325..00e5762 100644
+--- a/services/suggestions.js
++++ b/services/suggestions.js
+@@ -1,4 +1,7 @@
+-const { appendFile, readFile } = require('node:fs/promises');
++const { appendFile } = require('node:fs/promises');
++const { createReadStream } = require('node:fs');
++const { createInterface } = require('node:readline');
++const { encodeCursor, decodeCursor } = require('./list-cursor');
+ const { dataFile } = require('../db');
+ const { pool, ready } = require('./mysql');
+ const { currentMember, memberChanged } = require('./member-generation');
+@@ -21,20 +24,46 @@ async function saveSuggestion(uid, message, generation) {
+   }
+ }
+ 
+-async function suggestionInbox() {
++const compare = (a, b) => b.submitted - a.submitted || b.source.localeCompare(a.source)
++  || b.id.padStart(20, '0').localeCompare(a.id.padStart(20, '0'));
++
++async function suggestionInbox(value) {
++  const parsed = decodeCursor(value);
++  const cursor = parsed?.length === 3 && Number.isSafeInteger(parsed[0]) && parsed[0] >= 0
++    && ['member', 'guest', 'local'].includes(parsed[1]) && /^\d{1,20}$/.test(parsed[2])
++    ? { submitted: parsed[0], source: parsed[1], id: parsed[2] } : null;
+   const db = await ready();
+-  const [items] = await db.query(`SELECT uid, message, UNIX_TIMESTAMP(submitted_at) AS submitted
+-    FROM projectlog_suggestions
+-    UNION ALL
+-    SELECT NULL AS uid, message, UNIX_TIMESTAMP(submitted_at) AS submitted FROM projectlog_guest_suggestions
+-    ORDER BY submitted DESC`);
++  const batches = await Promise.all([['projectlog_suggestions', 'member'], ['projectlog_guest_suggestions', 'guest']].map(async ([table, source]) => {
++    const sameTime = cursor && (source < cursor.source ? 'TRUE' : source === cursor.source ? 'id < ?' : 'FALSE');
++    const condition = cursor ? `WHERE submitted_at < FROM_UNIXTIME(?) OR (submitted_at=FROM_UNIXTIME(?) AND ${sameTime})` : '';
++    const params = cursor ? [cursor.submitted, cursor.submitted, ...(source === cursor.source ? [cursor.id] : [])] : [];
++    const [rows] = await db.execute(`SELECT CAST(id AS CHAR) AS id, ${source === 'member' ? 'uid' : 'NULL AS uid'},
++      message, UNIX_TIMESTAMP(submitted_at) AS submitted FROM ${table} inbox ${condition}
++      ORDER BY submitted_at DESC, inbox.id DESC LIMIT 31`, params);
++    return rows.map(row => ({ ...row, submitted: Number(row.submitted), source }));
++  }));
++  const items = batches.flat();
++  // Old JSONL inquiries remain readable without retaining the whole file in memory.
++  const input = createReadStream(suggestionsFile, { encoding: 'utf8' });
++  const lines = createInterface({ input, crlfDelay: Infinity });
++  let lineNumber = 0;
+   try {
+-    const legacy = await readFile(suggestionsFile, 'utf8');
+-    items.push(...legacy.trim().split('\n').filter(Boolean).map(line => JSON.parse(line)));
++    for await (const line of lines) {
++      lineNumber++;
++      if (!line.trim()) continue;
++      const entry = JSON.parse(line);
++      const row = { ...entry, submitted: Number(entry.submitted), source: 'local', id: String(lineNumber) };
++      if (!cursor || compare(row, cursor) > 0) items.push(row);
++      items.sort(compare);
++      if (items.length > 31) items.length = 31;
++    }
+   } catch (error) {
+     if (error.code !== 'ENOENT') throw error;
+-  }
+-  return items.sort((first, second) => second.submitted - first.submitted);
++  } finally { lines.close(); input.destroy(); }
++  items.sort(compare);
++  const page = items.slice(0, 30);
++  const last = page.at(-1);
++  return { items: page, nextCursor: items.length > 30 ? encodeCursor([last.submitted, last.source, last.id]) : '' };
+ }
+ 
+ module.exports = { saveSuggestion, suggestionInbox };
+diff --git a/services/todo-list.js b/services/todo-list.js
+new file mode 100644
+index 0000000..3f0bf7c
+--- /dev/null
++++ b/services/todo-list.js
+@@ -0,0 +1,41 @@
++const { ready } = require('./mysql');
++const { pageNumber } = require('./notifications');
++const { validAnchor } = require('../calendar');
++
++const fields = `SELECT t.*, f.public_id, f.node_id, n.project_id AS source_project_id
++  FROM todos t LEFT JOIN feedbacks f ON f.id=t.feedback_id LEFT JOIN nodes n ON n.id=f.node_id`;
++const todoFor = row => ({
++  id: row.id, projectId: row.project_id || '', title: row.title, description: row.description,
++  dueDate: row.due_date || '', done: row.status === 'complete',
++  completedAt: row.completed_at ? new Date(String(row.completed_at).replace(' ', 'T') + 'Z').toISOString() : undefined,
++  ...(row.feedback_id ? { feedbackSource: { projectId: row.source_project_id, nodeId: row.node_id, feedbackId: row.public_id } } : {})
++});
++
++async function todoList(uid, query = {}) {
++  const db = await ready();
++  const page = pageNumber(query.page);
++  const completedOn = validAnchor(query.completedOn) ? query.completedOn : '';
++  const params = [uid];
++  let condition = '';
++  if (completedOn) {
++    const start = new Date(completedOn + 'T00:00:00+09:00');
++    condition = ' AND t.completed_at >= ? AND t.completed_at < ?';
++    params.push(start, new Date(+start + 86400000));
++  }
++  const [[pending], [completed]] = await Promise.all([
++    db.execute(fields + " WHERE t.user_id=? AND t.status='pending' ORDER BY t.sort_order", [uid]),
++    db.execute(fields + ` WHERE t.user_id=? AND t.status='complete' ${condition}
++      ORDER BY t.completed_at DESC, t.id DESC LIMIT 31 OFFSET ${(page - 1) * 30}`, params)
++  ]);
++  const items = [...pending, ...completed.slice(0, 30)].map(todoFor);
++  let editing = items.find(todo => todo.id === query.edit);
++  if (!editing && typeof query.edit === 'string' && query.edit.length <= 80) {
++    const [[row]] = await db.execute(fields + ' WHERE t.user_id=? AND t.id=?', [uid, query.edit]);
++    if (row) { editing = todoFor(row); items.push(editing); }
++  }
++  const url = number => '/todos?' + new URLSearchParams({ page: number, ...(completedOn ? { completedOn } : {}) }) + '#todo-timeline';
++  return { items, editing, completedOn,
++    pagination: { previous: page > 1 ? url(page - 1) : '', next: completed.length > 30 ? url(page + 1) : '' } };
++}
++
++module.exports = { todoList };
+diff --git a/services/updates.js b/services/updates.js
+index fd8c238..56f7e4b 100644
+--- a/services/updates.js
++++ b/services/updates.js
+@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
+ const { readFileSync, writeFileSync, renameSync } = require('node:fs');
+ const { dataFile } = require('../db');
+ const { pool, ready } = require('./mysql');
++const { encodeCursor, decodeCursor } = require('./list-cursor');
+ const { version: currentVersion } = require('../package.json');
+ const localFile = dataFile + '.updates.json';
+ 
+@@ -14,11 +15,38 @@ function readLocalUpdates() {
+   }
+ }
+ 
+-async function listUpdates() {
+-  if (!pool) return readLocalUpdates();
+-  const db = await ready();
+-  const [rows] = await db.query('SELECT id, version, title, content, published_at AS publishedAt FROM projectlog_updates ORDER BY published_at DESC, id DESC');
+-  return rows;
++let firstPage;
++const stampFor = value => value instanceof Date ? value.toISOString().replace('T', ' ').replace('Z', '') : value;
++
++async function readUpdatePage(cursor) {
++  let rows;
++  if (!pool) {
++    rows = readLocalUpdates().map(row => ({ ...row, publishedAt: stampFor(new Date(row.publishedAt)) }))
++      .sort((a,b) => b.publishedAt.localeCompare(a.publishedAt) || b.id.localeCompare(a.id))
++      .filter(row => !cursor || row.publishedAt < cursor[0] || (row.publishedAt === cursor[0] && row.id < cursor[1])).slice(0, 31);
++  } else {
++    const db = await ready();
++    [rows] = await db.execute(`SELECT id, version, title, content, published_at AS publishedAt FROM projectlog_updates
++      ${cursor ? 'WHERE published_at < ? OR (published_at = ? AND id < ?)' : ''}
++      ORDER BY published_at DESC, id DESC LIMIT 31`, cursor ? [cursor[0], cursor[0], cursor[1]] : []);
++  }
++  const last = rows[29];
++  return { updates: rows.slice(0,30).map(row => ({ ...row, publishedAt: stampFor(row.publishedAt).replace(' ', 'T') + 'Z' })),
++    nextCursor: rows.length > 30 ? encodeCursor([stampFor(last.publishedAt), last.id]) : '' };
++}
++
++async function listUpdates(value) {
++  const parsed = decodeCursor(value);
++  const cursor = parsed?.length === 2 && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(parsed[0])
++    && Number.isFinite(Date.parse(parsed[0].replace(' ', 'T') + 'Z'))
++    && /^[0-9a-f-]{36}$/i.test(parsed[1]) ? parsed : null;
++  if (cursor) return readUpdatePage(cursor);
++  if (!firstPage || firstPage.expires <= Date.now()) {
++    const entry = { expires: Date.now() + 30000 };
++    entry.promise = readUpdatePage(null).catch(error => { if (firstPage === entry) firstPage = null; throw error; });
++    firstPage = entry;
++  }
++  return firstPage.promise;
+ }
+ 
+ async function publishUpdate(draft) {
+@@ -28,11 +56,13 @@ async function publishUpdate(draft) {
+     updates.unshift(update);
+     writeFileSync(localFile + '.tmp', JSON.stringify(updates));
+     renameSync(localFile + '.tmp', localFile);
++    firstPage = null;
+     return;
+   }
+   const db = await ready();
+   await db.execute('INSERT INTO projectlog_updates (id, version, title, content) VALUES (?, ?, ?, ?)',
+     [update.id, update.version, update.title, update.content]);
++  firstPage = null;
+ }
+ 
+ module.exports = { currentVersion, listUpdates, publishUpdate };
+diff --git a/services/workspace-store.js b/services/workspace-store.js
+index b1633e1..721d9f7 100644
+--- a/services/workspace-store.js
++++ b/services/workspace-store.js
+@@ -1,4 +1,5 @@
+ const { createHash, randomUUID } = require('node:crypto');
++const { lockMemberGeneration } = require('./member-generation');
+ 
+ const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+ const stableId = (...parts) => {
+@@ -316,7 +317,7 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
+   if (migration) await db.execute('UPDATE projectlog_workspaces SET storage_version = 1 WHERE uid = ?', [uid]);
+ }
+ 
+-async function saveWorkspace(pool, current, records) {
++async function saveWorkspace(pool, current, records, { generation, beforePersist } = {}) {
+   if (current.readOnly) throw new Error('Cannot save a partial read-only workspace');
+   if (current.scope === 'todos' && (records.nodes.length || !same(records.projects, current.records.projects)
+       || !same(records.readAlerts, current.records.readAlerts))) {
+@@ -335,9 +336,11 @@ async function saveWorkspace(pool, current, records) {
+   const db = await pool.getConnection();
+   try {
+     await db.beginTransaction();
++    if (generation !== undefined) await lockMemberGeneration(db, current.uid, generation);
+     const [result] = await db.execute(`UPDATE projectlog_workspaces SET version = version + 1
+       WHERE uid = ? AND version = ? AND storage_version = 1`, [current.uid, current.version]);
+     if (result.affectedRows !== 1) throw conflict();
++    if (beforePersist) await beforePersist(db);
+     await persistWorkspace(db, current.uid, records, current.records);
+     await db.commit();
+     current.records = records;
+diff --git a/sql/schema.sql b/sql/schema.sql
+index 095686d..7dbdf52 100644
+--- a/sql/schema.sql
++++ b/sql/schema.sql
+@@ -12,6 +12,7 @@ CREATE TABLE `projectlog_guest_suggestions` (
+   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+   `message` text NOT NULL,
+   `submitted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  KEY `inbox_date` (`submitted_at`,`id`),
+   PRIMARY KEY (`id`)
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+ 
+@@ -91,6 +92,7 @@ CREATE TABLE `projectlog_suggestions` (
+   `uid` int unsigned NOT NULL,
+   `message` text NOT NULL,
+   `submitted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  KEY `inbox_date` (`submitted_at`,`id`),
+   PRIMARY KEY (`id`),
+   KEY `uid` (`uid`),
+   CONSTRAINT `projectlog_suggestions_ibfk_1` FOREIGN KEY (`uid`) REFERENCES `projectlog_users` (`uid`)
+@@ -100,6 +102,7 @@ CREATE TABLE `projectlog_user_avatars` (
+   `uid` int unsigned NOT NULL,
+   `mime_type` varchar(32) NOT NULL,
+   `image_data` mediumblob NOT NULL,
++  `image_hash` char(64) DEFAULT NULL,
+   PRIMARY KEY (`uid`),
+   CONSTRAINT `projectlog_user_avatars_ibfk_1` FOREIGN KEY (`uid`) REFERENCES `projectlog_users` (`uid`) ON DELETE CASCADE
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+diff --git a/tests/followup-ui.test.cjs b/tests/followup-ui.test.cjs
+new file mode 100644
+index 0000000..2286581
+--- /dev/null
++++ b/tests/followup-ui.test.cjs
+@@ -0,0 +1,62 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { readFileSync } = require('node:fs');
++const vm = require('node:vm');
++
++function element() {
++  return {
++    children: [], dataset: {}, attributes: {}, listeners: {}, hidden: false,
++    append(...items) { this.children.push(...items); },
++    replaceChildren(...items) { this.children = items; },
++    querySelectorAll() { return this.children.filter(child => child.open); },
++    setAttribute(key, value) { this.attributes[key] = value; },
++    getAttribute(key) { return this.attributes[key]; },
++    addEventListener(name, handler) { this.listeners[name] = handler; },
++    focus() {}
++  };
++}
++
++test('update history appends cursor pages, retries failed pages and avoids repeated opens', async () => {
++  const list = element(), status = element(), retry = element(), more = element(), opener = element();
++  const panels = { general: element(), updates: element() };
++  const tabs = Object.keys(panels).map(name => {
++    const tab = element(); tab.dataset.settingsTab = name;
++    tab.setAttribute('aria-controls', name);
++    return tab;
++  });
++  const dialog = element();
++  dialog.querySelectorAll = () => tabs;
++  dialog.querySelector = selector => ({ '[data-updates-list]': list, '[data-updates-status]': status,
++    '[data-retry-updates]': retry, '[data-more-updates]': more })[selector];
++  const calls = [];
++  let fail = false;
++  const update = id => ({ id, version:'1.0.0', title:id, content:'test', publishedAt:'2026-11-19T00:00:00Z' });
++  const context = {
++    document: {
++      getElementById: id => id === 'settings-dialog' ? dialog : panels[id] || null,
++      querySelector: () => opener, createElement: element
++    },
++    fetch: async url => {
++      calls.push(url);
++      if (fail) throw new Error('network');
++      return { ok:true, json:async()=>({updates:[update(url)],nextCursor:url.includes('?') ? '' : 'older-page'}) };
++    }, Intl, Date, Set, encodeURIComponent
++  };
++  vm.runInNewContext(readFileSync(require.resolve('../public/updates.js'),'utf8'),context);
++  tabs[1].listeners.click();
++  await new Promise(resolve=>setImmediate(resolve));
++  assert.equal(list.children.length,1);
++  assert.equal(more.hidden,false);
++  opener.listeners.click();
++  assert.equal(calls.length,1);
++  fail = true;
++  await more.listeners.click();
++  assert.equal(retry.hidden,false);
++  assert.equal(list.children.length,1);
++  fail = false;
++  await retry.listeners.click();
++  assert.equal(calls.at(-1),'/updates?cursor=older-page');
++  assert.equal(list.children.length,2);
++  assert.equal(more.hidden,true);
++  assert.equal(more.disabled,false);
++});
+diff --git a/tests/relational.test.cjs b/tests/relational.test.cjs
+index 65f287c..08f4c2c 100644
+--- a/tests/relational.test.cjs
++++ b/tests/relational.test.cjs
+@@ -23,6 +23,7 @@ test('relational migration and application flows', { skip: !url }, async t => {
+   let requestGate;
+   let apiFailure = false;
+   let saveFailure = false;
++  let transactionFailure = false;
+   let failedSaves = 0;
+   const workspaceStore = require('../services/workspace-store');
+   const workspaceLoads = [];
+@@ -34,6 +35,13 @@ test('relational migration and application flows', { skip: !url }, async t => {
+       failedSaves++;
+       throw Object.assign(new Error('test storage unavailable'), { code: 'TEST_DB_UNAVAILABLE' });
+     }
++    if (transactionFailure) {
++      const options = args[3];
++      args[3] = { ...options, beforePersist: async connection => {
++        await options?.beforePersist?.(connection);
++        throw Object.assign(new Error('test transaction conflict'), { status: 409 });
++      } };
++    }
+     return originalSave(...args);
+   };
+   require.cache[require.resolve('../services/openai')] = { exports: { responses: {
+@@ -479,6 +487,14 @@ test('relational migration and application flows', { skip: !url }, async t => {
+         apiFailure = true;
+         let response = await form(route, { style: 'mentor', request: '실패 확인' }, cookie);
+         assert.equal(response.status, 502);
++        // The response is sent before the route's finally block releases its SQL reservation.
++        let pending;
++        for (let attempt=0; attempt<200; attempt++) {
++          pending = await sql("SELECT request_id FROM projectlog_feedback_requests WHERE user_id=10000 AND status='generating'");
++          if (!pending.length) break;
++          await new Promise(resolve => setTimeout(resolve, 10));
++        }
++        assert.equal(pending.length, 0);
+         apiFailure = false;
+         saveFailure = true;
+         response = await form(route, recoveryBody, cookie);
+@@ -493,6 +509,164 @@ test('relational migration and application flows', { skip: !url }, async t => {
+       const health = await fetch(base + '/projects', { headers: { Cookie: cookie } });
+       assert.equal(health.status, 200);
+     });
++    await t.test('project deletion rolls back Portfolio detachment when a later write fails', async () => {
++      const [before] = await sql('SELECT project_id, version FROM portfolios WHERE id=?', [portfolioId]);
++      transactionFailure = true;
++      let response;
++      try { response = await form('/projects/' + projectId + '/delete', {}, cookie); }
++      finally { transactionFailure = false; }
++      assert.equal(response.status, 409);
++      assert.deepEqual((await sql('SELECT project_id, version FROM portfolios WHERE id=?', [portfolioId]))[0], before);
++      assert.equal((await sql('SELECT id FROM projects WHERE id=?', [projectId])).length, 1);
++      assert.equal((await sql('SELECT id FROM nodes WHERE id=?', [nodeId])).length, 1);
++    });
++    await t.test('same-host proxy rate limits use the nearest untrusted client address', async () => {
++      const trust = require('../app').get('trust proxy fn');
++      assert.equal(trust('127.0.0.1'), true);
++      assert.equal(trust('203.0.113.10'), false);
++      const login = forwarded => fetch(base + '/login', { method: 'POST', redirect: 'manual',
++        headers: { 'X-Forwarded-For': forwarded }, body: new URLSearchParams({ username: 'no_such_user' }) });
++      for (let i=1; i<=26; i++) assert.equal((await login('203.0.113.' + i)).status, 401);
++      for (let i=1; i<=25; i++) assert.equal((await login('198.51.100.' + i + ', 203.0.113.99')).status, 401);
++      assert.equal((await login('198.51.100.200, 203.0.113.99')).status, 429);
++    });
++    await t.test('avatars resize uploads, reject undecodable images and revalidate without BLOB reads', async () => {
++      const sharp = require('sharp');
++      const upload = async (bytes, memberCookie = cookie) => {
++        const data = new FormData();
++        data.set('avatar', new Blob([bytes], { type: 'image/png' }), 'avatar.png');
++        return form('/account/avatar', data, memberCookie);
++      };
++      const original = await sharp({ create: { width: 1600, height: 900, channels: 3, background: '#007fff' } }).png().toBuffer();
++      assert.equal((await upload(original)).status, 204);
++      let response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie } });
++      assert.equal(response.status, 200);
++      const metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata();
++      assert.equal(metadata.format, 'webp');
++      assert.ok(metadata.width <= 256 && metadata.height <= 256);
++      const etag = response.headers.get('etag');
++      const statements = [];
++      const execute = pool.execute;
++      pool.execute = function (statement, ...params) { statements.push(statement); return execute.call(this, statement, ...params); };
++      try {
++        response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie, 'If-None-Match': etag } });
++        assert.equal(response.status, 304);
++        assert.ok(!statements.some(statement => statement.includes('image_data')));
++      } finally { pool.execute = execute; }
++      const changed = await sharp({ create: { width: 500, height: 500, channels: 3, background: '#ff0000' } }).png().toBuffer();
++      assert.equal((await upload(changed)).status, 204);
++      response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie, 'If-None-Match': etag } });
++      assert.equal(response.status, 200);
++      assert.notEqual(response.headers.get('etag'), etag);
++      assert.equal((await upload(Buffer.from('89504e470d0a1a0a00000000', 'hex'))).status, 422);
++      await sql('INSERT INTO projectlog_user_avatars (uid,mime_type,image_data) VALUES (10001,?,?)', ['image/png', original]);
++      response = await fetch(base + '/account/avatar', { headers: { Cookie: secondCookie } });
++      assert.equal(response.status, 200);
++      assert.ok((await sharp(Buffer.from(await response.arrayBuffer())).metadata()).width <= 256);
++      assert.ok((await sql('SELECT image_hash FROM projectlog_user_avatars WHERE uid=10001'))[0].image_hash);
++    });
++    await t.test('Portfolio list skips nodes; detail loads only its linked project with latest revisions', async () => {
++      let response = await fetch(base + '/portfolio', { headers: { Cookie: cookie } });
++      assert.equal(response.status, 200);
++      assert.equal(workspaceLoads.at(-1).nodes, false);
++      response = await fetch(base + '/portfolio/' + portfolioId, { headers: { Cookie: cookie } });
++      assert.equal(response.status, 200);
++      assert.equal(workspaceLoads.at(-1).projectId, projectId);
++      assert.equal(workspaceLoads.at(-1).history, false);
++      assert.equal(workspaceLoads.at(-1).todos, false);
++      assert.equal(workspaceLoads.at(-1).readOnly, true);
++    });
++    await t.test('completed Todos paginate in SQL, support Seoul date filters and deep-link editing', async () => {
++      const ids = Array.from({length:65}, () => randomUUID());
++      const completed = '2024-01-01 16:00:00.000'; // Seoul: January 2
++      try {
++        for (let index=0; index<ids.length; index++) await sql(`INSERT INTO todos
++          (id,user_id,title,description,status,completed_at,sort_order) VALUES (?,10000,?,'','complete',?,?)`,
++        [ids[index], 'paged-todo-' + index, completed, 1000+index]);
++        const { todoList } = require('../services/todo-list');
++        const first = await todoList(10000, { completedOn:'2024-01-02' });
++        const second = await todoList(10000, { completedOn:'2024-01-02', page:'2' });
++        const third = await todoList(10000, { completedOn:'2024-01-02', page:'3' });
++        assert.equal(first.items.filter(item=>item.done).length, 30);
++        assert.equal(second.items.filter(item=>item.done).length, 30);
++        assert.equal(third.items.filter(item=>item.done).length, 5);
++        assert.equal(new Set([...first.items,...second.items,...third.items].filter(item=>item.done).map(item=>item.id)).size,65);
++        assert.ok(first.pagination.next);
++        assert.equal(third.pagination.next, '');
++        let response = await fetch(base+'/todos?completedOn=2024-01-02&page=2', {headers:{Cookie:cookie}});
++        assert.equal(response.status,200);
++        const html = await response.text();
++        assert.match(html,/data-todo-pagination/);
++        assert.match(html,/page=2&amp;completedOn=2024-01-02/);
++        const completeOnSecondPage = second.items.find(item=>item.done).id;
++        response = await form('/todos/'+completeOnSecondPage+'/reopen?page=2&completedOn=2024-01-02',{},cookie);
++        assert.equal(response.status,303);
++        assert.equal(response.headers.get('location'),'/todos?page=2&completedOn=2024-01-02');
++
++        assert.equal((await todoList(10000,{completedOn:'2024-01-01'})).items.filter(item=>item.done && ids.includes(item.id)).length,0);
++        const target = third.items.find(item=>item.done).id;
++        response = await fetch(base+'/todos?edit='+target, {headers:{Cookie:cookie}});
++        assert.equal(response.status,200);
++        assert.match(await response.text(), new RegExp('value="'+target+'"|id="todo-'+target+'"'));
++      } finally { await pool.query('DELETE FROM todos WHERE id IN (?)',[ids]); }
++    });
++    await t.test('admin member pages aggregate selected users and retain global totals', async () => {
++      try {
++        for (let uid=10100; uid<10165; uid++) await sql('INSERT INTO projectlog_users (uid,username,display_name) VALUES (?,?,?)',[uid,'page_'+uid,'Page '+uid]);
++        const { memberUsage, usageSummary } = require('../services/member-usage');
++        const first = await memberUsage(30, { query:'Page' });
++        const second = await memberUsage(30, { query:'Page', page:2 });
++        assert.equal(first.members.length,30);
++        assert.equal(second.members.length,30);
++        assert.equal(new Set([...first.members,...second.members].map(member=>member.uid)).size,60);
++        assert.equal((await memberUsage(30,{query:'%'})).members.length,0);
++        assert.equal((await memberUsage(30,{uid:10164})).members[0].uid,10164);
++        assert.equal((await usageSummary(30)).memberCount,67);
++        const response = await fetch(base+'/developer?q=Page&page=2',{headers:{Cookie:cookie}});
++        assert.equal(response.status,200);
++        assert.match(await response.text(),/page=3/);
++      } finally { await sql('DELETE FROM projectlog_users WHERE uid BETWEEN 10100 AND 10164'); }
++    });
++    await t.test('inquiries merge cursor pages with legacy files without duplicate tied timestamps', async () => {
++      const { appendFile, unlink } = require('node:fs/promises');
++      const { suggestionInbox } = require('../services/suggestions');
++      const file = process.env.PROJECT_LOG_DATA_FILE + '.suggestions.jsonl';
++      try {
++        for (let i=0; i<35; i++) {
++          await sql("INSERT INTO projectlog_suggestions (uid,message,submitted_at) VALUES (10000,?,'2026-11-19 00:00:00')",['member-'+i]);
++          await sql("INSERT INTO projectlog_guest_suggestions (message,submitted_at) VALUES (?,'2026-11-19 00:00:00')",['guest-'+i]);
++        }
++        await appendFile(file,Array.from({length:5},(_,i)=>JSON.stringify({uid:null,message:'legacy-'+i,submitted:1795046400})).join('\n')+'\n');
++        const items=[]; let cursor;
++        do { const page=await suggestionInbox(cursor); assert.ok(page.items.length<=30); items.push(...page.items); cursor=page.nextCursor; } while(cursor);
++        assert.equal(items.length,75);
++        assert.equal(new Set(items.map(item=>item.source+'-'+item.id)).size,75);
++        const response=await fetch(base+'/suggestions',{headers:{Cookie:cookie}});
++        assert.equal(response.status,200);
++        assert.match(await response.text(),/cursor=/);
++      } finally {
++        await sql('DELETE FROM projectlog_suggestions'); await sql('DELETE FROM projectlog_guest_suggestions'); await unlink(file).catch(()=>{});
++      }
++    });
++    await t.test('updates use bounded cursor pages, share cached reads and invalidate on publish', async () => {
++      const { listUpdates, publishUpdate } = require('../services/updates');
++      for(let i=0;i<65;i++) await publishUpdate({version:'1.0.0',title:'Update '+i,content:'test'});
++      const statements=[]; const execute=pool.execute;
++      pool.execute=function(statement,...params){ statements.push(statement); return execute.call(this,statement,...params); };
++      try {
++        const pages=await Promise.all(Array.from({length:8},()=>listUpdates()));
++        assert.equal(statements.filter(statement=>statement.includes('FROM projectlog_updates')).length,1);
++        const first=pages[0]; assert.equal(first.updates.length,30);
++        const second=await listUpdates(first.nextCursor); const third=await listUpdates(second.nextCursor);
++        assert.equal(second.updates.length,30); assert.equal(third.updates.length,5); assert.equal(third.nextCursor,'');
++        assert.equal(new Set([...first.updates,...second.updates,...third.updates].map(item=>item.id)).size,65);
++        assert.ok(first.updates.every(item=>item.publishedAt.endsWith('Z')));
++        await publishUpdate({version:'1.0.1',title:'Fresh update',content:'test'});
++        assert.equal((await listUpdates()).updates[0].title,'Fresh update');
++        const response=await fetch(base+'/updates'); assert.equal(response.status,200);
++        assert.equal((await response.json()).updates.length,30);
++      } finally { pool.execute=execute; await sql('DELETE FROM projectlog_updates'); }
++    });
+     await t.test('existing pages render; delete cascades and optional links survive', async () => {
+       for (const route of ['/', '/projects', '/todos', '/notifications', '/developer', '/statistics', '/projects/' + projectId,
+         '/projects/' + projectId + '/nodes/' + nodeId + '/revisions', '/portfolio/' + portfolioId, '/portfolio/' + portfolioId + '/edit']) {
+diff --git a/views/developer.ejs b/views/developer.ejs
+index be548dc..438f80a 100644
+--- a/views/developer.ejs
++++ b/views/developer.ejs
+@@ -71,4 +71,5 @@
+     </table>
+   </div>
+ </section>
++<%- include('partials/pagination') %>
+ <%- include('partials/end') %>
+diff --git a/views/partials/settings.ejs b/views/partials/settings.ejs
+index 780c8c1..0475e84 100644
+--- a/views/partials/settings.ejs
++++ b/views/partials/settings.ejs
+@@ -32,6 +32,7 @@
+     <p class="settings-version">현재 버전 <strong>v<%= currentVersion %></strong></p>
+     <p class="muted" role="status" data-updates-status></p>
+     <div class="settings-updates-list" data-updates-list></div>
++    <button type="button" class="button" data-more-updates hidden>이전 업데이트 더 보기</button>
+     <button type="button" class="button" data-retry-updates hidden>다시 불러오기</button>
+   </div>
+ </dialog>
+diff --git a/views/partials/todo-row.ejs b/views/partials/todo-row.ejs
+index 139463e..ab94472 100644
+--- a/views/partials/todo-row.ejs
++++ b/views/partials/todo-row.ejs
+@@ -1,10 +1,10 @@
+ <% const linkedProject = projectFor(todo.projectId); const done = todo.done; %>
+ <li class="todo-row <%= done ? 'todo-done' : '' %>" id="todo-<%= todo.id %>"<% if (linkedProject) { %> style="--project-color:<%= linkedProject.color %>"<% } %>>
+   <% if (editing?.id === todo.id) { %>
+-    <form class="todo-edit-form" method="post" action="/todos/<%= todo.id %>/edit">
++    <form class="todo-edit-form" method="post" action="/todos/<%= todo.id %>/edit<%= todoQuery %>">
+       <input name="title" aria-label="할 일 제목 수정" value="<%= editing.title %>" required maxlength="160" autofocus>
+       <button class="button primary">저장</button>
+-      <a class="button" href="/todos#todo-<%= todo.id %>">취소</a>
++      <a class="button" href="/todos<%= todoQuery %>#todo-<%= todo.id %>">취소</a>
+       <% if (todo.feedbackSource) { %>
+         <span class="todo-meta todo-edit-project">프로젝트 · <%= linkedProject?.name %></span>
+       <% } else { %>
+@@ -12,7 +12,7 @@
+       <% } %>
+     </form>
+   <% } else { %>
+-  <form method="post" action="/todos/<%= todo.id %>/<%= done ? 'reopen' : 'done' %>" data-todo-toggle>
++  <form method="post" action="/todos/<%= todo.id %>/<%= done ? 'reopen' : 'done' %><%= todoQuery %>" data-todo-toggle>
+     <button class="todo-check" aria-label="<%= todo.title %> <%= done ? '완료 취소' : '완료' %>"><span aria-hidden="true"><%= done ? '✓' : '' %></span></button>
+   </form>
+   <div class="todo-description">
+@@ -24,10 +24,10 @@
+       <time class="todo-meta" datetime="<%= todo.completedAt %>"><%= shortDate(completionDate(todo)) %> <%= completionTime(todo) %> 완료</time>
+     <% } else if (done) { %><span class="todo-meta">완료 시각 미기록</span><% } %>
+   </div>
+-  <a class="button todo-edit" href="/todos?edit=<%= todo.id %>#todo-<%= todo.id %>" aria-label="<%= todo.title %> 수정" title="수정">
++  <a class="button todo-edit" href="/todos<%= todoQuery || '?' %><%= todoQuery ? '&' : '' %>edit=<%= todo.id %>#todo-<%= todo.id %>" aria-label="<%= todo.title %> 수정" title="수정">
+     <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11z"/></svg>
+   </a>
+-  <form method="post" action="/todos/<%= todo.id %>/delete">
++  <form method="post" action="/todos/<%= todo.id %>/delete<%= todoQuery %>">
+     <button class="button todo-remove" aria-label="<%= todo.title %> 삭제">삭제</button>
+   </form>
+   <% } %>
+diff --git a/views/suggestions.ejs b/views/suggestions.ejs
+index fab7449..81ad52c 100644
+--- a/views/suggestions.ejs
++++ b/views/suggestions.ejs
+@@ -27,4 +27,5 @@
+     <% } %>
+   </section>
+ <% } %>
++<%- include('partials/pagination') %>
+ <%- include('partials/end') %>
+diff --git a/views/todos.ejs b/views/todos.ejs
+index bcaee87..24415ee 100644
+--- a/views/todos.ejs
++++ b/views/todos.ejs
+@@ -22,10 +22,10 @@
+         <h2 id="todo-completed-title">완료</h2>
+         <% if (todayDone.length) { %>
+           <ul><% for (const todo of todayDone) { %><%- include('partials/todo-row', { todo, editing }) %><% } %></ul>
+-        <% } else { %><p class="muted todo-group-empty">오늘 완료한 할 일이 없어요.</p><% } %>
++        <% } else { %><p class="muted todo-group-empty">이 페이지에 오늘 완료한 할 일이 없어요.</p><% } %>
+         <% if (pastDone.length) { %>
+           <details class="todo-history" id="todo-history-list" data-todo-history <%= pastDone.some(todo => todo.id === editing?.id) ? 'open' : '' %>>
+-            <summary>더보기</summary>
++            <summary>이 페이지의 이전 완료 기록</summary>
+             <ul><% for (const todo of pastDone) { %><%- include('partials/todo-row', { todo, editing }) %><% } %></ul>
+           </details>
+         <% } %>
+@@ -44,10 +44,10 @@
+       <% } else { %><p class="panel empty">선택한 날짜에 완료 기록이 없어요.</p><% } %>
+     <% } else { %>
+       <% if (todayDone.length) { %><%- include('partials/todo-timeline-day', { date: today, items: todayDone }) %>
+-      <% } else { %><p class="panel empty">오늘 완료 기록이 없어요.</p><% } %>
++      <% } else { %><p class="panel empty">이 페이지에 오늘 완료 기록이 없어요.</p><% } %>
+       <% if (Object.keys(pastTimeline).length) { %>
+         <details class="todo-history" id="todo-history-timeline" data-todo-history>
+-          <summary>더보기</summary>
++          <summary>이 페이지의 이전 완료 기록</summary>
+           <% for (const [date, items] of Object.entries(pastTimeline)) { %>
+             <%- include('partials/todo-timeline-day', { date, items }) %>
+           <% } %>
+@@ -56,4 +56,5 @@
+     <% } %>
+   </section>
+ </div>
++<div data-todo-pagination><%- include('partials/pagination') %></div>
+ <%- include('partials/end') %>

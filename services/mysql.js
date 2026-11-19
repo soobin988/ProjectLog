@@ -18,8 +18,11 @@ async function createTables() {
     uid INT UNSIGNED PRIMARY KEY,
     mime_type VARCHAR(32) NOT NULL,
     image_data MEDIUMBLOB NOT NULL,
+    image_hash CHAR(64),
     FOREIGN KEY (uid) REFERENCES projectlog_users(uid) ON DELETE CASCADE
   ) ENGINE=InnoDB`);
+  const [avatarColumns] = await pool.query("SHOW COLUMNS FROM projectlog_user_avatars LIKE 'image_hash'");
+  if (!avatarColumns.length) await pool.query('ALTER TABLE projectlog_user_avatars ADD image_hash CHAR(64) NULL');
   await pool.query(`CREATE TABLE IF NOT EXISTS projectlog_workspaces (
     uid INT UNSIGNED PRIMARY KEY,
     version INT UNSIGNED NOT NULL DEFAULT 0,
@@ -45,6 +48,10 @@ async function createTables() {
     message TEXT NOT NULL,
     submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  for (const table of ['projectlog_suggestions', 'projectlog_guest_suggestions']) {
+    const [indexes] = await pool.query('SHOW INDEX FROM ' + table + " WHERE Key_name='inbox_date'");
+    if (!indexes.length) await pool.query('ALTER TABLE ' + table + ' ADD INDEX inbox_date (submitted_at, id)');
+  }
   await pool.query(`CREATE TABLE IF NOT EXISTS projectlog_member_settings (
     id TINYINT UNSIGNED PRIMARY KEY,
     member_limit INT UNSIGNED NOT NULL

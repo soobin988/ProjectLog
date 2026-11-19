@@ -1,10 +1,10 @@
 <% const linkedProject = projectFor(todo.projectId); const done = todo.done; %>
 <li class="todo-row <%= done ? 'todo-done' : '' %>" id="todo-<%= todo.id %>"<% if (linkedProject) { %> style="--project-color:<%= linkedProject.color %>"<% } %>>
   <% if (editing?.id === todo.id) { %>
-    <form class="todo-edit-form" method="post" action="/todos/<%= todo.id %>/edit">
+    <form class="todo-edit-form" method="post" action="/todos/<%= todo.id %>/edit<%= todoQuery %>">
       <input name="title" aria-label="할 일 제목 수정" value="<%= editing.title %>" required maxlength="160" autofocus>
       <button class="button primary">저장</button>
-      <a class="button" href="/todos#todo-<%= todo.id %>">취소</a>
+      <a class="button" href="/todos<%= todoQuery %>#todo-<%= todo.id %>">취소</a>
       <% if (todo.feedbackSource) { %>
         <span class="todo-meta todo-edit-project">프로젝트 · <%= linkedProject?.name %></span>
       <% } else { %>
@@ -12,7 +12,7 @@
       <% } %>
     </form>
   <% } else { %>
-  <form method="post" action="/todos/<%= todo.id %>/<%= done ? 'reopen' : 'done' %>" data-todo-toggle>
+  <form method="post" action="/todos/<%= todo.id %>/<%= done ? 'reopen' : 'done' %><%= todoQuery %>" data-todo-toggle>
     <button class="todo-check" aria-label="<%= todo.title %> <%= done ? '완료 취소' : '완료' %>"><span aria-hidden="true"><%= done ? '✓' : '' %></span></button>
   </form>
   <div class="todo-description">
@@ -24,10 +24,10 @@
       <time class="todo-meta" datetime="<%= todo.completedAt %>"><%= shortDate(completionDate(todo)) %> <%= completionTime(todo) %> 완료</time>
     <% } else if (done) { %><span class="todo-meta">완료 시각 미기록</span><% } %>
   </div>
-  <a class="button todo-edit" href="/todos?edit=<%= todo.id %>#todo-<%= todo.id %>" aria-label="<%= todo.title %> 수정" title="수정">
+  <a class="button todo-edit" href="/todos<%= todoQuery || '?' %><%= todoQuery ? '&' : '' %>edit=<%= todo.id %>#todo-<%= todo.id %>" aria-label="<%= todo.title %> 수정" title="수정">
     <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11z"/></svg>
   </a>
-  <form method="post" action="/todos/<%= todo.id %>/delete">
+  <form method="post" action="/todos/<%= todo.id %>/delete<%= todoQuery %>">
     <button class="button todo-remove" aria-label="<%= todo.title %> 삭제">삭제</button>
   </form>
   <% } %>

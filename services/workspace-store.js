@@ -1,4 +1,5 @@
 const { createHash, randomUUID } = require('node:crypto');
+const { lockMemberGeneration } = require('./member-generation');
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const stableId = (...parts) => {
@@ -316,7 +317,7 @@ async function persistWorkspace(db, uid, records, previous = { projects: [], nod
   if (migration) await db.execute('UPDATE projectlog_workspaces SET storage_version = 1 WHERE uid = ?', [uid]);
 }
 
-async function saveWorkspace(pool, current, records) {
+async function saveWorkspace(pool, current, records, { generation, beforePersist } = {}) {
   if (current.readOnly) throw new Error('Cannot save a partial read-only workspace');
   if (current.scope === 'todos' && (records.nodes.length || !same(records.projects, current.records.projects)
       || !same(records.readAlerts, current.records.readAlerts))) {
@@ -335,9 +336,11 @@ async function saveWorkspace(pool, current, records) {
   const db = await pool.getConnection();
   try {
     await db.beginTransaction();
+    if (generation !== undefined) await lockMemberGeneration(db, current.uid, generation);
     const [result] = await db.execute(`UPDATE projectlog_workspaces SET version = version + 1
       WHERE uid = ? AND version = ? AND storage_version = 1`, [current.uid, current.version]);
     if (result.affectedRows !== 1) throw conflict();
+    if (beforePersist) await beforePersist(db);
     await persistWorkspace(db, current.uid, records, current.records);
     await db.commit();
     current.records = records;

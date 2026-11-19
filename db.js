@@ -35,10 +35,10 @@ async function useWorkspace(req, res, next) {
   let options;
   if (req.method === 'GET' || req.method === 'HEAD') {
     options = { readOnly: true, history: req.path.endsWith('/revisions') };
-    if (req.path === '/' || req.path === '/projects' || req.path === '/todos' || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
+    if (req.path === '/' || req.path === '/projects' || /^\/todos(?:\/|$)/.test(req.path) || /^\/portfolio\/[^/]+\/files\//.test(req.path)) {
       options.nodes = false;
       options.alerts = false;
-      options.todos = req.path === '/todos';
+      options.todos = false;
     }
     const projectPath = /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
     if (projectPath) options.projectId = projectPath[1];
@@ -53,6 +53,12 @@ async function useWorkspace(req, res, next) {
   }
   const projectWrite = req.method === 'POST' && /^\/projects\/([^/]+)(?:\/|$)/.exec(req.path);
   if (projectWrite) options = { projectId: projectWrite[1], history: false, scope: 'project' };
+  if (/^\/portfolio(?:\/|$)/.test(req.path)) {
+    const match = /^\/portfolio\/([0-9a-f-]{36})(?:\/|$)/i.exec(req.path);
+    if (match) req.portfolio = await require('./services/portfolio-store').get(req.user.uid, match[1]);
+    options = { readOnly: true, history: false, todos: false, alerts: false,
+      nodes: Boolean(req.portfolio?.projectId), projectId: req.portfolio?.projectId };
+  }
   workspace.run(await readWorkspace(req.user.uid, options), next);
 }
 
@@ -61,14 +67,14 @@ async function refreshWorkspace() {
   if (current) Object.assign(current, await readWorkspace(current.uid));
 }
 
-async function saveData(nextProjects, nextNodes, nextTodos = todos, nextReadAlerts = readAlerts) {
+async function saveData(nextProjects, nextNodes, nextTodos = todos, nextReadAlerts = readAlerts, transactionOptions) {
   const records = {
     projects: [...nextProjects], nodes: [...nextNodes], todos: [...nextTodos], readAlerts: [...nextReadAlerts]
   };
   const current = workspace.getStore();
   if (current) {
     const connection = await ready();
-    return saveWorkspace(connection, current, records);
+    return saveWorkspace(connection, current, records, transactionOptions);
   }
   throw new Error('A member workspace context is required');
 }

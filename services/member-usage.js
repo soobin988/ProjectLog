@@ -145,27 +145,43 @@ function startOfPeriod(days) {
   return (today - days + 1) * daySeconds - seoulOffset;
 }
 
-async function memberUsage(days) {
+async function memberUsage(days, { query = '', page = 1, uid } = {}) {
   const db = await usageDb();
   const from = startOfPeriod(days);
-  const [rows] = await db.execute(`
-    SELECT u.uid, u.username, u.display_name AS name, u.google_subject IS NOT NULL AS google,
-      a.seconds, recent.lastActive, f.requests, f.failures, f.metered, f.inputTokens, f.outputTokens, f.totalTokens
-    FROM projectlog_users u
-    LEFT JOIN (
-      SELECT uid, ${activityTotal} AS seconds
-      FROM projectlog_activity WHERE minute_slot >= ? GROUP BY uid
-    ) a ON a.uid = u.uid
-    LEFT JOIN (
-      SELECT uid, MAX(minute_slot) * 60 AS lastActive
-      FROM projectlog_activity GROUP BY uid
-    ) recent ON recent.uid = u.uid
-    LEFT JOIN (
-      SELECT uid, ${aiTotals}
-      FROM projectlog_ai_usage WHERE recorded_at >= ? GROUP BY uid
-    ) f ON f.uid = u.uid
-    ORDER BY u.uid`, [from / 60, from]);
-  return rows;
+  const condition = uid ? 'uid=?' : query ? "(CAST(uid AS CHAR) LIKE ? OR display_name LIKE ? OR username LIKE ?)" : 'TRUE';
+  // LOCATE treats user-entered % and _ as ordinary characters, unlike LIKE.
+  const search = condition.replaceAll('CAST(uid AS CHAR) LIKE ?', 'LOCATE(?, CAST(uid AS CHAR))>0')
+    .replaceAll('display_name LIKE ?', 'LOCATE(?, display_name)>0').replaceAll('username LIKE ?', 'LOCATE(?, username)>0');
+  const [selected] = await db.execute(`SELECT uid, username, display_name AS name, google_subject IS NOT NULL AS google
+    FROM projectlog_users WHERE ${search} ORDER BY uid LIMIT ${uid ? 1 : 31} OFFSET ${uid ? 0 : (page - 1) * 30}`,
+    uid ? [uid] : query ? [query, query, query] : []);
+  const members = selected.slice(0, 30);
+  if (!members.length) return { members, hasMore: false };
+  const ids = members.map(member => member.uid);
+  const placeholders = ids.map(() => '?').join(',');
+  const [[activity], [recent], [ai]] = await Promise.all([
+    db.execute(`SELECT uid, ${activityTotal} AS seconds FROM projectlog_activity
+      WHERE uid IN (${placeholders}) AND minute_slot>=? GROUP BY uid`, [...ids, from / 60]),
+    db.execute(`SELECT uid, MAX(minute_slot)*60 AS lastActive FROM projectlog_activity
+      WHERE uid IN (${placeholders}) GROUP BY uid`, ids),
+    db.execute(`SELECT uid, ${aiTotals} FROM projectlog_ai_usage
+      WHERE uid IN (${placeholders}) AND recorded_at>=? GROUP BY uid`, [...ids, from])
+  ]);
+  const byId = rows => new Map(rows.map(row => [row.uid, row]));
+  const a = byId(activity), r = byId(recent), f = byId(ai);
+  return { members: members.map(member => ({ ...member, ...a.get(member.uid), ...r.get(member.uid), ...f.get(member.uid) })),
+    hasMore: selected.length > 30 };
+}
+
+async function usageSummary(days) {
+  const db = await usageDb();
+  const from = startOfPeriod(days);
+  const [[[count]], [[activity]], [[ai]]] = await Promise.all([
+    db.execute('SELECT COUNT(*) AS memberCount FROM projectlog_users'),
+    db.execute(`SELECT ${activityTotal} AS seconds FROM projectlog_activity WHERE minute_slot>=?`, [from / 60]),
+    db.execute(`SELECT ${aiTotals} FROM projectlog_ai_usage WHERE recorded_at>=?`, [from])
+  ]);
+  return { memberCount: count.memberCount, totals: { ...activity, ...ai } };
 }
 
 async function dailyUsage(uid, days) {
@@ -186,4 +202,4 @@ async function dailyUsage(uid, days) {
   }));
 }
 
-module.exports = { usageDb, recordActivity, recordActivitySlots, activityBuckets, trackAiResponse, linkFeedbackUsage, memberUsage, dailyUsage };
+module.exports = { usageDb, recordActivity, recordActivitySlots, activityBuckets, trackAiResponse, linkFeedbackUsage, memberUsage, usageSummary, dailyUsage };

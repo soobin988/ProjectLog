@@ -11,11 +11,12 @@ const { currentVersion, listUpdates } = require('./services/updates');
 const { pool, ready } = require('./services/mysql');
 const { userStatistics, dashboardSummary } = require('./services/workspace-statistics');
 const { dashboardData } = require('./services/dashboard-data');
+const { todoList } = require('./services/todo-list');
 const { unreadCounts, listNotifications, markNotificationRead, pageNumber } = require('./services/notifications');
 
 const { projectFor, projectNodes, workStatuses, errorStatuses, workStatusFor, errorStatusFor, isIssue,
   shortDate, defaultColor, validColor, completionDate, completionTime,
-  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, seoulDate, completedTodos,
+  feedbackSourceUrl, feedbackResults, feedbackIdFor, feedbackEntries, seoulDate,
   todoFields, todoError, addTodo, nodeDetailUrl } = require('./routes/shared');
 
 const { assetUrl, assetHeaders } = require('./services/static-assets');
@@ -24,6 +25,9 @@ const app = express();
 app.locals.assetUrl = assetUrl;
 
 app.disable('x-powered-by');
+// Same-host Nginx overwrites forwarded headers; trust only explicitly configured peers.
+app.set('trust proxy', process.env.PROJECT_LOG_TRUST_PROXY === 'false' ? false
+  : (process.env.PROJECT_LOG_TRUST_PROXY || 'loopback'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.locals.currentVersion = currentVersion;
@@ -34,8 +38,8 @@ app.use(loadAccount);
 app.use(accounts);
 app.use(require('./routes/developer'));
 app.get('/updates', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.json({ version: currentVersion, updates: await listUpdates() });
+  res.set('Cache-Control', 'private, no-cache');
+  res.json({ version: currentVersion, ...await listUpdates(req.query.cursor) });
 });
 app.use(async (req, res, next) => {
   res.locals.feedbackMarkdown = await feedbackMarkdown;
@@ -100,26 +104,35 @@ app.get('/', async (req, res) => {
   });
 });
 
-function renderTodos(res, { draft = {}, editing, error = '', completedOn = '' } = {}) {
+function todoQuery(req) {
+  const params = new URLSearchParams();
+  const page = pageNumber(req.query.page);
+  if (page > 1) params.set('page', page);
+  if (validAnchor(req.query.completedOn)) params.set('completedOn', req.query.completedOn);
+  return params.size ? '?' + params : '';
+}
+
+async function renderTodos(req, res, { draft = {}, editing, error = '' } = {}) {
+  const listing = await todoList(req.user.uid, req.query);
+  const { items, completedOn, pagination } = listing;
+  editing ||= listing.editing;
+  if (editing && !items.some(item => item.id === editing.id)) items.push(editing);
   const today = seoulDate.format(new Date());
-  const completionsByDate = Object.groupBy(completedTodos(), completionDate);
+  const completionsByDate = Object.groupBy(items.filter(todo => todo.done && todo.completedAt).sort((a,b) => b.completedAt.localeCompare(a.completedAt)), completionDate);
   const { [today]: todayDone = [], ...pastTimeline } = completionsByDate;
-  const pending = todos.filter(todo => !todo.done);
-  const pastDone = [...Object.values(pastTimeline).flat(), ...todos.filter(todo => todo.done && !todo.completedAt)];
+  const pending = items.filter(todo => !todo.done);
+  const pastDone = [...Object.values(pastTimeline).flat(), ...items.filter(todo => todo.done && !todo.completedAt)];
   res.render('todos', {
     page: 'todos', title: 'Todo List', projects, pending, today, todayDone, pastDone, pastTimeline,
-    draft, editing, error, completedOn, matchingCompletions: completionsByDate[completedOn] || []
+    draft, editing, error, completedOn, pagination, todoQuery: todoQuery(req), matchingCompletions: completionsByDate[completedOn] || []
   });
 }
 
-app.get('/todos', (req, res) => renderTodos(res, {
-  editing: todos.find(todo => todo.id === req.query.edit),
-  completedOn: validAnchor(req.query.completedOn) ? req.query.completedOn : ''
-}));
+app.get('/todos', (req, res) => renderTodos(req, res));
 app.post('/todos', async (req, res) => {
   const draft = todoFields(req, seoulDate.format(new Date()));
   const error = todoError(draft);
-  if (error) return renderTodos(res.status(422), { draft, error });
+  if (error) return renderTodos(req, res.status(422), { draft, error });
   await addTodo(draft);
   res.redirect('/todos');
 });
@@ -154,11 +167,11 @@ app.post('/todos/:todoId/:action', async (req, res, next) => {
     const editing = { ...todo, ...todoFields(req, todo.dueDate) };
     if (todo.feedbackSource) editing.projectId = todo.feedbackSource.projectId;
     const error = todoError(editing);
-    if (error) return renderTodos(res.status(422), { editing, error });
+    if (error) return renderTodos(req, res.status(422), { editing, error });
     await saveData(projects, nodes, todos.map(item => item.id === todoId ? editing : item));
-    return res.redirect('/todos#todo-' + todoId);
+    return res.redirect('/todos' + todoQuery(req) + '#todo-' + todoId);
   }
-  const returnUrl = validAnchor(req.query.completedOn) ? '/todos?completedOn=' + req.query.completedOn : '/todos';
+  const returnUrl = '/todos' + todoQuery(req);
   const done = action === 'done';
   if (action !== 'delete' && todo.done === done) return res.redirect(303, returnUrl);
   const completedAt = done ? new Date().toISOString() : null;

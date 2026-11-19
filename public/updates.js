@@ -3,21 +3,28 @@
   const tabs = [...dialog.querySelectorAll('[data-settings-tab]')];
   const list = dialog.querySelector('[data-updates-list]');
   const status = dialog.querySelector('[data-updates-status]');
+  const more = dialog.querySelector('[data-more-updates]');
+  let nextCursor = '';
+  let loadedAt = 0;
+  let retryAppend = false;
   const retry = dialog.querySelector('[data-retry-updates]');
   const date = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium' });
   let loading = false;
 
-  async function loadUpdates() {
+  async function loadUpdates(append = false) {
+    if (!append && Date.now() - loadedAt < 30000) return;
     if (loading) return;
     loading = true;
     retry.hidden = true;
+    more.disabled = true;
+    retryAppend = append;
     status.textContent = '업데이트 내역을 불러오는 중…';
     try {
-      const response = await fetch('/updates', { cache: 'no-store' });
+      const response = await fetch('/updates' + (append && nextCursor ? '?cursor=' + encodeURIComponent(nextCursor) : ''));
       if (!response.ok) throw new Error('업데이트 내역을 불러오지 못했어요.');
-      const { updates } = await response.json();
+      const { updates, nextCursor: cursor } = await response.json();
       const open = new Set([...list.querySelectorAll('details[open]')].map(card => card.dataset.updateId));
-      list.replaceChildren(...updates.map(update => {
+      const cards = updates.map(update => {
         const card = document.createElement('details');
         card.className = 'settings-update-card';
         card.dataset.updateId = update.id;
@@ -37,13 +44,19 @@
         summary.append(version, title, time);
         card.append(summary, content);
         return card;
-      }));
+      });
+      if (append) list.append(...cards);
+      else list.replaceChildren(...cards);
+      nextCursor = cursor || '';
+      more.hidden = !nextCursor;
+      if (!append) loadedAt = Date.now();
       status.textContent = updates.length ? '' : '아직 등록된 업데이트 내역이 없어요.';
     } catch {
       status.textContent = '업데이트 내역을 불러오지 못했어요.';
       retry.hidden = false;
     } finally {
       loading = false;
+      more.disabled = false;
     }
   }
 
@@ -66,7 +79,8 @@
       target.focus();
     });
   }
-  retry.addEventListener('click', loadUpdates);
+  retry.addEventListener('click', () => loadUpdates(retryAppend));
+  more.addEventListener('click', () => loadUpdates(true));
   document.querySelector('[data-open-settings]').addEventListener('click', () => {
     if (tabs.find(tab => tab.dataset.settingsTab === 'updates').getAttribute('aria-selected') === 'true') loadUpdates();
   });

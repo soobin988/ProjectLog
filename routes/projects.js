@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { randomUUID } = require('node:crypto');
 const { projects, nodes, todos, readAlerts, saveData } = require('../db');
-const { pool, ready } = require('../services/mysql');
+const { pool, ready, portfolioDb } = require('../services/mysql');
 const { removeNodeFiles } = require('../services/member-removal');
 const portfolioStore = require('../services/portfolio-store');
 const { projectEntry } = require('./portfolio');
@@ -99,17 +99,9 @@ router.post(base + '/edit', async (req, res) => {
 });
 
 router.post(base + '/delete', async (req, res) => {
+  if (pool) await portfolioDb();
   const project = req.project;
   const records = projectNodes(project.id);
-  const linked = (await portfolioStore.list(req.user?.uid)).filter(item => item.projectId === project.id);
-  for (const item of linked) {
-    const entry = projectEntry(item);
-    await portfolioStore.save(req.user?.uid, {
-      ...item, projectId: '', title: entry.title, description: entry.description, technologies: entry.technologies,
-      status: entry.status, startDate: item.startDate || projectStart(project) || '',
-      endDate: item.endDate || project.completedDate || (project.progress >= 100 ? records[0]?.date || '' : '')
-    }, req.memberGeneration);
-  }
   const deletedAlerts = new Set(records.flatMap(node => [
     'issue-' + node.id, ...node.feedback.map((feedback, index) => feedbackAlertId(node, feedback, index))
   ]));
@@ -125,7 +117,21 @@ router.post(base + '/delete', async (req, res) => {
     return remaining;
   });
   await saveData(projects.filter(item => item.id !== project.id), nextNodes, nextTodos,
-    readAlerts.filter(id => !deletedAlerts.has(id)));
+    readAlerts.filter(id => !deletedAlerts.has(id)), {
+      generation: req.memberGeneration,
+      beforePersist: async connection => {
+        // The member lock also serializes Portfolio saves, including newly linked entries.
+        const linked = (await portfolioStore.list(req.user.uid, connection)).filter(item => item.projectId === project.id);
+        for (const item of linked) {
+          const entry = projectEntry(item);
+          await portfolioStore.save(req.user.uid, {
+            ...item, projectId: '', title: entry.title, description: entry.description, technologies: entry.technologies,
+            status: entry.status, startDate: item.startDate || projectStart(project) || '',
+            endDate: item.endDate || project.completedDate || (project.progress >= 100 ? records[0]?.date || '' : '')
+          }, req.memberGeneration, connection);
+        }
+      }
+    });
   const files = records.flatMap(node => (node.revision?.files || []).map(file => file.id));
   const failed = await removeNodeFiles(pool ? await ready() : null, files);
   if (failed) console.error('Project attachment cleanup incomplete (%d files)', failed);

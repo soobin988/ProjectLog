@@ -215,17 +215,17 @@ const defaultPage = { heading: 'Portfolio', description: '내 프로젝트와 �
 
 async function renderList(req, res, { draft, headerError = '' } = {}) {
   const uid = owner(req);
-  const [items, settings] = await Promise.all([store.list(uid), store.pageSettings(uid)]);
+  const [items, settings] = await Promise.all([store.listCards(uid), store.pageSettings(uid)]);
   const header = settings || defaultPage;
   res.render('portfolio', {
-    page: 'portfolio', title: 'Portfolio', entries: items.map(item => projectEntry(item)),
+    page: 'portfolio', title: 'Portfolio', entries: items.map(item => ({ item, title: item.title || projectFor(item.projectId)?.name || '연결된 프로젝트', cover: coverFor(item) })),
     header, headerDraft: draft || header, headerError
   });
 }
 
 async function ownerOnly(req, res, next, id) {
   if (!uuidPattern.test(id)) return missing(res);
-  req.portfolio = await store.get(owner(req), id);
+  req.portfolio ||= await store.get(owner(req), id);
   if (!req.portfolio) return missing(res);
   next();
 }

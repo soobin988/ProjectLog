@@ -22,7 +22,8 @@
     "micromark-util-decode-string": "^2.0.1",
     "multer": "^2.5.0",
     "mysql2": "^3.24.6",
-    "openai": "^7.57.0"
+    "openai": "^7.57.0",
+    "sharp": "^0.35.5"
   },
   "engines": {
     "node": ">=22"

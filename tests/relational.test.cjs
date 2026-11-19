@@ -23,6 +23,7 @@ test('relational migration and application flows', { skip: !url }, async t => {
   let requestGate;
   let apiFailure = false;
   let saveFailure = false;
+  let transactionFailure = false;
   let failedSaves = 0;
   const workspaceStore = require('../services/workspace-store');
   const workspaceLoads = [];
@@ -33,6 +34,13 @@ test('relational migration and application flows', { skip: !url }, async t => {
     if (saveFailure) {
       failedSaves++;
       throw Object.assign(new Error('test storage unavailable'), { code: 'TEST_DB_UNAVAILABLE' });
+    }
+    if (transactionFailure) {
+      const options = args[3];
+      args[3] = { ...options, beforePersist: async connection => {
+        await options?.beforePersist?.(connection);
+        throw Object.assign(new Error('test transaction conflict'), { status: 409 });
+      } };
     }
     return originalSave(...args);
   };
@@ -479,6 +487,14 @@ test('relational migration and application flows', { skip: !url }, async t => {
         apiFailure = true;
         let response = await form(route, { style: 'mentor', request: '실패 확인' }, cookie);
         assert.equal(response.status, 502);
+        // The response is sent before the route's finally block releases its SQL reservation.
+        let pending;
+        for (let attempt=0; attempt<200; attempt++) {
+          pending = await sql("SELECT request_id FROM projectlog_feedback_requests WHERE user_id=10000 AND status='generating'");
+          if (!pending.length) break;
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.equal(pending.length, 0);
         apiFailure = false;
         saveFailure = true;
         response = await form(route, recoveryBody, cookie);
@@ -492,6 +508,164 @@ test('relational migration and application flows', { skip: !url }, async t => {
       assert.equal((await sql('SELECT COUNT(*) AS count FROM feedbacks'))[0].count, before + 1);
       const health = await fetch(base + '/projects', { headers: { Cookie: cookie } });
       assert.equal(health.status, 200);
+    });
+    await t.test('project deletion rolls back Portfolio detachment when a later write fails', async () => {
+      const [before] = await sql('SELECT project_id, version FROM portfolios WHERE id=?', [portfolioId]);
+      transactionFailure = true;
+      let response;
+      try { response = await form('/projects/' + projectId + '/delete', {}, cookie); }
+      finally { transactionFailure = false; }
+      assert.equal(response.status, 409);
+      assert.deepEqual((await sql('SELECT project_id, version FROM portfolios WHERE id=?', [portfolioId]))[0], before);
+      assert.equal((await sql('SELECT id FROM projects WHERE id=?', [projectId])).length, 1);
+      assert.equal((await sql('SELECT id FROM nodes WHERE id=?', [nodeId])).length, 1);
+    });
+    await t.test('same-host proxy rate limits use the nearest untrusted client address', async () => {
+      const trust = require('../app').get('trust proxy fn');
+      assert.equal(trust('127.0.0.1'), true);
+      assert.equal(trust('203.0.113.10'), false);
+      const login = forwarded => fetch(base + '/login', { method: 'POST', redirect: 'manual',
+        headers: { 'X-Forwarded-For': forwarded }, body: new URLSearchParams({ username: 'no_such_user' }) });
+      for (let i=1; i<=26; i++) assert.equal((await login('203.0.113.' + i)).status, 401);
+      for (let i=1; i<=25; i++) assert.equal((await login('198.51.100.' + i + ', 203.0.113.99')).status, 401);
+      assert.equal((await login('198.51.100.200, 203.0.113.99')).status, 429);
+    });
+    await t.test('avatars resize uploads, reject undecodable images and revalidate without BLOB reads', async () => {
+      const sharp = require('sharp');
+      const upload = async (bytes, memberCookie = cookie) => {
+        const data = new FormData();
+        data.set('avatar', new Blob([bytes], { type: 'image/png' }), 'avatar.png');
+        return form('/account/avatar', data, memberCookie);
+      };
+      const original = await sharp({ create: { width: 1600, height: 900, channels: 3, background: '#007fff' } }).png().toBuffer();
+      assert.equal((await upload(original)).status, 204);
+      let response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      const metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata();
+      assert.equal(metadata.format, 'webp');
+      assert.ok(metadata.width <= 256 && metadata.height <= 256);
+      const etag = response.headers.get('etag');
+      const statements = [];
+      const execute = pool.execute;
+      pool.execute = function (statement, ...params) { statements.push(statement); return execute.call(this, statement, ...params); };
+      try {
+        response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie, 'If-None-Match': etag } });
+        assert.equal(response.status, 304);
+        assert.ok(!statements.some(statement => statement.includes('image_data')));
+      } finally { pool.execute = execute; }
+      const changed = await sharp({ create: { width: 500, height: 500, channels: 3, background: '#ff0000' } }).png().toBuffer();
+      assert.equal((await upload(changed)).status, 204);
+      response = await fetch(base + '/account/avatar', { headers: { Cookie: cookie, 'If-None-Match': etag } });
+      assert.equal(response.status, 200);
+      assert.notEqual(response.headers.get('etag'), etag);
+      assert.equal((await upload(Buffer.from('89504e470d0a1a0a00000000', 'hex'))).status, 422);
+      await sql('INSERT INTO projectlog_user_avatars (uid,mime_type,image_data) VALUES (10001,?,?)', ['image/png', original]);
+      response = await fetch(base + '/account/avatar', { headers: { Cookie: secondCookie } });
+      assert.equal(response.status, 200);
+      assert.ok((await sharp(Buffer.from(await response.arrayBuffer())).metadata()).width <= 256);
+      assert.ok((await sql('SELECT image_hash FROM projectlog_user_avatars WHERE uid=10001'))[0].image_hash);
+    });
+    await t.test('Portfolio list skips nodes; detail loads only its linked project with latest revisions', async () => {
+      let response = await fetch(base + '/portfolio', { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      assert.equal(workspaceLoads.at(-1).nodes, false);
+      response = await fetch(base + '/portfolio/' + portfolioId, { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200);
+      assert.equal(workspaceLoads.at(-1).projectId, projectId);
+      assert.equal(workspaceLoads.at(-1).history, false);
+      assert.equal(workspaceLoads.at(-1).todos, false);
+      assert.equal(workspaceLoads.at(-1).readOnly, true);
+    });
+    await t.test('completed Todos paginate in SQL, support Seoul date filters and deep-link editing', async () => {
+      const ids = Array.from({length:65}, () => randomUUID());
+      const completed = '2024-01-01 16:00:00.000'; // Seoul: January 2
+      try {
+        for (let index=0; index<ids.length; index++) await sql(`INSERT INTO todos
+          (id,user_id,title,description,status,completed_at,sort_order) VALUES (?,10000,?,'','complete',?,?)`,
+        [ids[index], 'paged-todo-' + index, completed, 1000+index]);
+        const { todoList } = require('../services/todo-list');
+        const first = await todoList(10000, { completedOn:'2024-01-02' });
+        const second = await todoList(10000, { completedOn:'2024-01-02', page:'2' });
+        const third = await todoList(10000, { completedOn:'2024-01-02', page:'3' });
+        assert.equal(first.items.filter(item=>item.done).length, 30);
+        assert.equal(second.items.filter(item=>item.done).length, 30);
+        assert.equal(third.items.filter(item=>item.done).length, 5);
+        assert.equal(new Set([...first.items,...second.items,...third.items].filter(item=>item.done).map(item=>item.id)).size,65);
+        assert.ok(first.pagination.next);
+        assert.equal(third.pagination.next, '');
+        let response = await fetch(base+'/todos?completedOn=2024-01-02&page=2', {headers:{Cookie:cookie}});
+        assert.equal(response.status,200);
+        const html = await response.text();
+        assert.match(html,/data-todo-pagination/);
+        assert.match(html,/page=2&amp;completedOn=2024-01-02/);
+        const completeOnSecondPage = second.items.find(item=>item.done).id;
+        response = await form('/todos/'+completeOnSecondPage+'/reopen?page=2&completedOn=2024-01-02',{},cookie);
+        assert.equal(response.status,303);
+        assert.equal(response.headers.get('location'),'/todos?page=2&completedOn=2024-01-02');
+
+        assert.equal((await todoList(10000,{completedOn:'2024-01-01'})).items.filter(item=>item.done && ids.includes(item.id)).length,0);
+        const target = third.items.find(item=>item.done).id;
+        response = await fetch(base+'/todos?edit='+target, {headers:{Cookie:cookie}});
+        assert.equal(response.status,200);
+        assert.match(await response.text(), new RegExp('value="'+target+'"|id="todo-'+target+'"'));
+      } finally { await pool.query('DELETE FROM todos WHERE id IN (?)',[ids]); }
+    });
+    await t.test('admin member pages aggregate selected users and retain global totals', async () => {
+      try {
+        for (let uid=10100; uid<10165; uid++) await sql('INSERT INTO projectlog_users (uid,username,display_name) VALUES (?,?,?)',[uid,'page_'+uid,'Page '+uid]);
+        const { memberUsage, usageSummary } = require('../services/member-usage');
+        const first = await memberUsage(30, { query:'Page' });
+        const second = await memberUsage(30, { query:'Page', page:2 });
+        assert.equal(first.members.length,30);
+        assert.equal(second.members.length,30);
+        assert.equal(new Set([...first.members,...second.members].map(member=>member.uid)).size,60);
+        assert.equal((await memberUsage(30,{query:'%'})).members.length,0);
+        assert.equal((await memberUsage(30,{uid:10164})).members[0].uid,10164);
+        assert.equal((await usageSummary(30)).memberCount,67);
+        const response = await fetch(base+'/developer?q=Page&page=2',{headers:{Cookie:cookie}});
+        assert.equal(response.status,200);
+        assert.match(await response.text(),/page=3/);
+      } finally { await sql('DELETE FROM projectlog_users WHERE uid BETWEEN 10100 AND 10164'); }
+    });
+    await t.test('inquiries merge cursor pages with legacy files without duplicate tied timestamps', async () => {
+      const { appendFile, unlink } = require('node:fs/promises');
+      const { suggestionInbox } = require('../services/suggestions');
+      const file = process.env.PROJECT_LOG_DATA_FILE + '.suggestions.jsonl';
+      try {
+        for (let i=0; i<35; i++) {
+          await sql("INSERT INTO projectlog_suggestions (uid,message,submitted_at) VALUES (10000,?,'2026-11-19 00:00:00')",['member-'+i]);
+          await sql("INSERT INTO projectlog_guest_suggestions (message,submitted_at) VALUES (?,'2026-11-19 00:00:00')",['guest-'+i]);
+        }
+        await appendFile(file,Array.from({length:5},(_,i)=>JSON.stringify({uid:null,message:'legacy-'+i,submitted:1795046400})).join('\n')+'\n');
+        const items=[]; let cursor;
+        do { const page=await suggestionInbox(cursor); assert.ok(page.items.length<=30); items.push(...page.items); cursor=page.nextCursor; } while(cursor);
+        assert.equal(items.length,75);
+        assert.equal(new Set(items.map(item=>item.source+'-'+item.id)).size,75);
+        const response=await fetch(base+'/suggestions',{headers:{Cookie:cookie}});
+        assert.equal(response.status,200);
+        assert.match(await response.text(),/cursor=/);
+      } finally {
+        await sql('DELETE FROM projectlog_suggestions'); await sql('DELETE FROM projectlog_guest_suggestions'); await unlink(file).catch(()=>{});
+      }
+    });
+    await t.test('updates use bounded cursor pages, share cached reads and invalidate on publish', async () => {
+      const { listUpdates, publishUpdate } = require('../services/updates');
+      for(let i=0;i<65;i++) await publishUpdate({version:'1.0.0',title:'Update '+i,content:'test'});
+      const statements=[]; const execute=pool.execute;
+      pool.execute=function(statement,...params){ statements.push(statement); return execute.call(this,statement,...params); };
+      try {
+        const pages=await Promise.all(Array.from({length:8},()=>listUpdates()));
+        assert.equal(statements.filter(statement=>statement.includes('FROM projectlog_updates')).length,1);
+        const first=pages[0]; assert.equal(first.updates.length,30);
+        const second=await listUpdates(first.nextCursor); const third=await listUpdates(second.nextCursor);
+        assert.equal(second.updates.length,30); assert.equal(third.updates.length,5); assert.equal(third.nextCursor,'');
+        assert.equal(new Set([...first.updates,...second.updates,...third.updates].map(item=>item.id)).size,65);
+        assert.ok(first.updates.every(item=>item.publishedAt.endsWith('Z')));
+        await publishUpdate({version:'1.0.1',title:'Fresh update',content:'test'});
+        assert.equal((await listUpdates()).updates[0].title,'Fresh update');
+        const response=await fetch(base+'/updates'); assert.equal(response.status,200);
+        assert.equal((await response.json()).updates.length,30);
+      } finally { pool.execute=execute; await sql('DELETE FROM projectlog_updates'); }
     });
     await t.test('existing pages render; delete cascades and optional links survive', async () => {
       for (const route of ['/', '/projects', '/todos', '/notifications', '/developer', '/statistics', '/projects/' + projectId,

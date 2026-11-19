@@ -465,6 +465,8 @@ if (todoGroups) {
       const url = new URL(form.action);
       const completedOn = new URLSearchParams(location.search).get('completedOn');
       if (completedOn) url.searchParams.set('completedOn', completedOn);
+      const currentPage = new URLSearchParams(location.search).get('page');
+      if (currentPage) url.searchParams.set('page', currentPage);
       const response = await fetch(url, { method: 'POST' });
       if (!response.ok) throw new Error('Could not update todo');
       const page = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -484,6 +486,7 @@ if (todoGroups) {
       }
       todoGroups.replaceChildren(...groups.children);
       document.querySelector('[data-todo-timeline]').replaceWith(timeline);
+      document.querySelector('[data-todo-pagination]').replaceWith(page.querySelector('[data-todo-pagination]'));
       if (restoreFocus) {
         const nextCheck = nearbyRow && document.getElementById(nearbyRow.id)?.querySelector('.todo-check');
         (nextCheck || document.querySelector('.todo-add input')).focus({ preventScroll: true });

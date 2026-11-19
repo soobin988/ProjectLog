@@ -1,17 +1,17 @@
 const { Router } = require('express');
-const { recordActivity, recordActivitySlots, memberUsage, dailyUsage } = require('../services/member-usage');
+const { recordActivity, recordActivitySlots, memberUsage, usageSummary, dailyUsage } = require('../services/member-usage');
 const { maxMemberLimit, readMemberLimit, setMemberLimit } = require('../services/membership');
 const { findMember, removeMemberData } = require('../services/member-removal');
 const { normalizeLayout, saveDashboardDefault } = require('../services/dashboard-default');
 const { publishUpdate } = require('../services/updates');
 
+const { pageNumber } = require('../services/notifications');
 const router = Router();
 const periods = { '7': '최근 7일', '30': '최근 30일', all: '전체 기간' };
 const number = new Intl.NumberFormat('ko-KR');
 const dateTime = new Intl.DateTimeFormat('ko-KR', {
   timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short'
 });
-const metrics = ['seconds', 'requests', 'failures', 'metered', 'inputTokens', 'outputTokens', 'totalTokens'];
 const units = value => number.format(Number(value) || 0);
 const periodFor = req => typeof req.query.period === 'string' && Object.hasOwn(periods, req.query.period) ? req.query.period : '30';
 const daysFor = period => period === 'all' ? 0 : Number(period);
@@ -53,15 +53,15 @@ router.use('/developer', (req, res, next) => {
 
 async function renderMembers(req, res, limitError = '', updateError = '', updateDraft = {}) {
   const period = periodFor(req);
-  const [all, memberLimit] = await Promise.all([memberUsage(daysFor(period)), readMemberLimit()]);
   const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
-  const term = query.toLowerCase();
-  const members = all.filter(member =>
-    [member.uid, member.name, member.username].some(field => field != null && String(field).toLowerCase().includes(term)));
-  const totals = Object.fromEntries(metrics.map(key =>
-    [key, all.reduce((sum, member) => sum + (Number(member[key]) || 0), 0)]));
+  const memberPage = pageNumber(req.query.page);
+  const [{ members, hasMore }, { totals, memberCount }, memberLimit] = await Promise.all([
+    memberUsage(daysFor(period), { query, page: memberPage }), usageSummary(daysFor(period)), readMemberLimit()
+  ]);
+  const url = page => '/developer?' + new URLSearchParams({ period, q: query, page });
+  const pagination = { previous: memberPage > 1 ? url(memberPage - 1) : '', next: hasMore ? url(memberPage + 1) : '' };
   res.render('developer', {
-    page: 'developer', title: '개발자 전용', period, periods, query, members, totals, memberCount: all.length,
+    page: 'developer', title: '개발자 전용', period, periods, query, members, totals, memberCount, pagination,
     memberLimit, maxMemberLimit, limitError, limitSaved: req.query.limit === 'saved',
     updateError, updateDraft, updatePublished: req.query.update === 'published',
     deleted: req.query.deleted === '1', cleanupFailed: req.query.cleanup === 'pending',
@@ -113,8 +113,7 @@ router.param('uid', async (req, res, next, uid) => {
 
 router.get(memberPath, async (req, res) => {
   const period = periodFor(req);
-  const members = await memberUsage(daysFor(period));
-  const member = members.find(item => String(item.uid) === req.params.uid);
+  const { members: [member] } = await memberUsage(daysFor(period), { uid: Number(req.params.uid) });
   if (!member) return missing(res);
   res.render('developer-member', {
     page: 'developer', title: member.name, member, dayRows: await dailyUsage(member.uid, daysFor(period)),

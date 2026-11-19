@@ -12,6 +12,7 @@ CREATE TABLE `projectlog_guest_suggestions` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `message` text NOT NULL,
   `submitted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `inbox_date` (`submitted_at`,`id`),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -91,6 +92,7 @@ CREATE TABLE `projectlog_suggestions` (
   `uid` int unsigned NOT NULL,
   `message` text NOT NULL,
   `submitted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `inbox_date` (`submitted_at`,`id`),
   PRIMARY KEY (`id`),
   KEY `uid` (`uid`),
   CONSTRAINT `projectlog_suggestions_ibfk_1` FOREIGN KEY (`uid`) REFERENCES `projectlog_users` (`uid`)
@@ -100,6 +102,7 @@ CREATE TABLE `projectlog_user_avatars` (
   `uid` int unsigned NOT NULL,
   `mime_type` varchar(32) NOT NULL,
   `image_data` mediumblob NOT NULL,
+  `image_hash` char(64) DEFAULT NULL,
   PRIMARY KEY (`uid`),
   CONSTRAINT `projectlog_user_avatars_ibfk_1` FOREIGN KEY (`uid`) REFERENCES `projectlog_users` (`uid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

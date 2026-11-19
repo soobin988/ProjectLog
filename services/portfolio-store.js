@@ -59,9 +59,25 @@ async function loadItems(where, params, connection) {
   }));
 }
 
-async function list(uid) {
+async function list(uid, connection) {
   if (!pool) return readLocal().items;
-  return loadItems('p.user_id = ?', [uid]);
+  return loadItems('p.user_id = ?', [uid], connection);
+}
+
+async function listCards(uid) {
+  if (!pool) return readLocal().items;
+  const db = await portfolioDb();
+  const [rows] = await db.execute(`SELECT p.id, p.project_id, p.title, c.settings AS cover
+    FROM portfolios p LEFT JOIN portfolio_covers c ON c.portfolio_id=p.id
+    WHERE p.user_id=? ORDER BY p.created_at DESC, p.id`, [uid]);
+  if (!rows.length) return [];
+  const [files] = await db.execute(`SELECT f.id, f.portfolio_id, f.is_thumbnail FROM portfolio_files f
+    JOIN portfolios p ON p.id=f.portfolio_id WHERE p.user_id=? AND f.file_type='image'
+    ORDER BY f.sort_order`, [uid]);
+  const byItem = Object.groupBy(files, file => file.portfolio_id);
+  return rows.map(row => ({ id: row.id, projectId: row.project_id, title: row.title,
+    cover: typeof row.cover === 'string' ? JSON.parse(row.cover) : row.cover,
+    files: (byItem[row.id] || []).map(file => ({ id: file.id, type: 'image', thumbnail: Boolean(file.is_thumbnail) })) }));
 }
 
 async function pageSettings(uid) {
@@ -100,7 +116,7 @@ async function shared(id) {
   return item;
 }
 
-async function save(uid, item, generation) {
+async function save(uid, item, generation, transaction) {
   const now = new Date();
   if (!pool) {
     updateLocal(data => {
@@ -115,9 +131,9 @@ async function save(uid, item, generation) {
     return;
   }
   const db = await portfolioDb();
-  const connection = await db.getConnection();
+  const connection = transaction || await db.getConnection();
   try {
-    await connection.beginTransaction();
+    if (!transaction) await connection.beginTransaction();
     await lockMemberGeneration(connection, uid, generation);
     const [previous] = item.version === undefined ? [] : await loadItems('p.user_id = ? AND p.id = ?', [uid, item.id], connection);
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -182,12 +198,12 @@ async function save(uid, item, generation) {
       await connection.execute(`INSERT INTO portfolio_contacts (portfolio_id, settings) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE settings = ?`, [item.id, settings, settings]);
     }
-    await connection.commit();
+    if (!transaction) await connection.commit();
   } catch (error) {
-    await connection.rollback();
+    if (!transaction) await connection.rollback();
     throw error;
   } finally {
-    connection.release();
+    if (!transaction) connection.release();
   }
 }
 
@@ -231,4 +247,4 @@ async function addAnalysis(uid, entry, generation) {
   if (!result.affectedRows) throw memberChanged();
 }
 
-module.exports = { list, pageSettings, savePageSettings, get, shared, save, remove, analysisHistory, addAnalysis };
+module.exports = { list, listCards, pageSettings, savePageSettings, get, shared, save, remove, analysisHistory, addAnalysis };

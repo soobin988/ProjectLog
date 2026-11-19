@@ -22,10 +22,10 @@
         <h2 id="todo-completed-title">완료</h2>
         <% if (todayDone.length) { %>
           <ul><% for (const todo of todayDone) { %><%- include('partials/todo-row', { todo, editing }) %><% } %></ul>
-        <% } else { %><p class="muted todo-group-empty">오늘 완료한 할 일이 없어요.</p><% } %>
+        <% } else { %><p class="muted todo-group-empty">이 페이지에 오늘 완료한 할 일이 없어요.</p><% } %>
         <% if (pastDone.length) { %>
           <details class="todo-history" id="todo-history-list" data-todo-history <%= pastDone.some(todo => todo.id === editing?.id) ? 'open' : '' %>>
-            <summary>더보기</summary>
+            <summary>이 페이지의 이전 완료 기록</summary>
             <ul><% for (const todo of pastDone) { %><%- include('partials/todo-row', { todo, editing }) %><% } %></ul>
           </details>
         <% } %>
@@ -44,10 +44,10 @@
       <% } else { %><p class="panel empty">선택한 날짜에 완료 기록이 없어요.</p><% } %>
     <% } else { %>
       <% if (todayDone.length) { %><%- include('partials/todo-timeline-day', { date: today, items: todayDone }) %>
-      <% } else { %><p class="panel empty">오늘 완료 기록이 없어요.</p><% } %>
+      <% } else { %><p class="panel empty">이 페이지에 오늘 완료 기록이 없어요.</p><% } %>
       <% if (Object.keys(pastTimeline).length) { %>
         <details class="todo-history" id="todo-history-timeline" data-todo-history>
-          <summary>더보기</summary>
+          <summary>이 페이지의 이전 완료 기록</summary>
           <% for (const [date, items] of Object.entries(pastTimeline)) { %>
             <%- include('partials/todo-timeline-day', { date, items }) %>
           <% } %>
@@ -56,4 +56,5 @@
     <% } %>
   </section>
 </div>
+<div data-todo-pagination><%- include('partials/pagination') %></div>
 <%- include('partials/end') %>

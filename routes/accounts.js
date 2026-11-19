@@ -213,10 +213,11 @@ if (pool) {
 }
 
 async function renderSuggestions(req, res, { draft = '', error = '' } = {}) {
-  const inbox = req.user?.developer ? await suggestionInbox() : null;
+  const inbox = req.user?.developer ? await suggestionInbox(req.query.cursor) : null;
   res.set('Cache-Control', 'private, no-store');
   res.render('suggestions', {
-    page: 'suggestions', guestsOnly: Boolean(pool && !req.user), inbox,
+    page: 'suggestions', guestsOnly: Boolean(pool && !req.user), inbox: inbox?.items,
+    pagination: { previous: req.query.cursor ? '/suggestions' : '', next: inbox?.nextCursor ? '/suggestions?cursor=' + inbox.nextCursor : '' },
     sent: !error && req.query.sent === '1', draft, error
   });
 }
