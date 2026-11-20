@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Project Log database and uploads together
+After=mysql.service
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=/etc/project-log.env
+WorkingDirectory=/home/ubuntu/project-log
+ExecStart=/usr/bin/flock -n /run/project-log-backup.lock /usr/bin/node /home/ubuntu/project-log/scripts/backup.cjs --service project-log
+TimeoutStartSec=infinity

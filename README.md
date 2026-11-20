@@ -195,6 +195,8 @@ GitHub에서 빈 저장소를 만듭니다. 이 프로젝트에는 이미 README
 
 ## AWS EC2에서 실행하기
 
+HTTPS 업로드·AI 대기 시간 설정과 DB·업로드 통합 백업(매일 자동 실행 포함)은 [Nginx 및 백업 안내](docs/backup-and-nginx.md)를 따르세요. 배포용 설정은 `deploy/`에 있습니다.
+
 Ubuntu EC2 한 대에서 앱과 MySQL을 실행하고, 내 PC에서 SSH 터널로 접속하는 예입니다. SSH 터널만 사용할 때는 보안 그룹에서 내 IP의 SSH 포트(22)를 허용합니다. 도메인으로 접속하게 하려면 HTTPS 역방향 프록시를 연결하고 `PROJECT_LOG_PUBLIC_ORIGIN`을 실제 HTTPS 주소로 설정합니다. 두 경우 모두 Node 앱과 MySQL은 EC2 내부의 루프백 주소에 둡니다. [AWS Linux 인스턴스 SSH 접속 안내](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-linux-inst-ssh.html)
 
 ### 1. 서버 접속 및 코드 설치
